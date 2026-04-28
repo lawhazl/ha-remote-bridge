@@ -35,13 +35,11 @@ from .const import (
     CONF_INCLUDE_DEVICES,
     CONF_INCLUDE_DOMAINS,
     CONF_INCLUDE_ENTITIES,
-    CONF_LOAD_COMPONENTS,
     CONF_MAX_MSG_SIZE,
     CONF_ROLE,
     CONF_SECURE,
     CONF_SERVICE_PREFIX,
     CONF_SERVICES,
-    CONF_SUBSCRIBE_EVENTS,
     DEFAULT_MAX_MSG_SIZE,
     DOMAIN,
     ROLE_HOST,
@@ -59,7 +57,6 @@ from .rest_api import (
 
 _LOGGER = logging.getLogger(__name__)
 
-ADD_NEW_EVENT = "add_new_event"
 
 
 async def validate_connection(hass: core.HomeAssistant, conf: dict) -> dict:
@@ -318,59 +315,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class HostOptionsFlowHandler(config_entries.OptionsFlowWithReload):
-    """Options flow for host-mode entries — 3 steps. Reloads entry on save."""
-
-    def __init__(self):
-        self.options: dict[str, Any] | None = None
-        self.events: set[Any] | None = None
+    """Options flow for host-mode entries — filter configuration only. Reloads entry on save."""
 
     async def async_step_init(self, user_input=None):
-        """Step 1 — basic options: prefixes, load_components, service_prefix."""
+        """Configure which domains, devices, and entities are exposed to remotes."""
         if user_input is not None:
-            self.options = user_input.copy()
-            return await self.async_step_domain_device_entity_filters()
-
-        domains = _local_domains(self.hass)
-        domains_with_loaded = sorted(
-            set(domains) | set(self.config_entry.options.get(CONF_LOAD_COMPONENTS, []))
-        )
-
-        return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(
-                        CONF_ENTITY_PREFIX,
-                        description={
-                            "suggested_value": self.config_entry.options.get(CONF_ENTITY_PREFIX)
-                        },
-                    ): str,
-                    vol.Optional(
-                        CONF_ENTITY_FRIENDLY_NAME_PREFIX,
-                        description={
-                            "suggested_value": self.config_entry.options.get(
-                                CONF_ENTITY_FRIENDLY_NAME_PREFIX
-                            )
-                        },
-                    ): str,
-                    vol.Optional(
-                        CONF_LOAD_COMPONENTS,
-                        default=self.config_entry.options.get(CONF_LOAD_COMPONENTS) or [],
-                    ): cv.multi_select(domains_with_loaded),
-                    vol.Required(
-                        CONF_SERVICE_PREFIX,
-                        default=self.config_entry.options.get(CONF_SERVICE_PREFIX)
-                        or slugify(self.config_entry.title),
-                    ): str,
-                }
-            ),
-        )
-
-    async def async_step_domain_device_entity_filters(self, user_input=None):
-        """Step 2 — include/exclude domain, device, and entity filters."""
-        if user_input is not None:
-            self.options.update(user_input)
-            return await self.async_step_events()
+            return self.async_create_entry(title="", data=user_input)
 
         domains = _local_domains(self.hass)
         devices = _local_devices(self.hass)
@@ -395,7 +345,7 @@ class HostOptionsFlowHandler(config_entries.OptionsFlowWithReload):
                 all_entities[eid] = eid
 
         return self.async_show_form(
-            step_id="domain_device_entity_filters",
+            step_id="init",
             data_schema=vol.Schema(
                 {
                     vol.Optional(
@@ -422,36 +372,6 @@ class HostOptionsFlowHandler(config_entries.OptionsFlowWithReload):
                         CONF_EXCLUDE_ENTITIES,
                         default=self.config_entry.options.get(CONF_EXCLUDE_ENTITIES) or [],
                     ): _area_grouped_selector(all_entities),
-                }
-            ),
-        )
-
-    async def async_step_events(self, user_input=None):
-        """Step 3 — event subscriptions."""
-        if user_input is not None:
-            if ADD_NEW_EVENT not in user_input:
-                self.options[CONF_SUBSCRIBE_EVENTS] = user_input.get(
-                    CONF_SUBSCRIBE_EVENTS, []
-                )
-                return self.async_create_entry(title="", data=self.options)
-
-            selected = user_input.get(CONF_SUBSCRIBE_EVENTS, [])
-            if self.events is None:
-                self.events = set()
-            self.events.add(user_input[ADD_NEW_EVENT])
-            selected.append(user_input[ADD_NEW_EVENT])
-        else:
-            self.events = set(self.config_entry.options.get(CONF_SUBSCRIBE_EVENTS) or [])
-            selected = self.config_entry.options.get(CONF_SUBSCRIBE_EVENTS) or []
-
-        return self.async_show_form(
-            step_id="events",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(
-                        CONF_SUBSCRIBE_EVENTS, default=selected
-                    ): cv.multi_select(self.events),
-                    vol.Optional(ADD_NEW_EVENT): str,
                 }
             ),
         )

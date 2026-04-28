@@ -56,33 +56,19 @@
   "options": {
     "step": {
       "init": {
-        "title": "Basic options (step 1 of 3)",
-        "data": {
-          "entity_prefix": "Entity prefix (optional)",
-          "entity_friendly_name_prefix": "Entity name prefix (optional)",
-          "load_components": "Load component if not loaded",
-          "service_prefix": "Service prefix",
-          "services": "Remote services"
-        }
-      },
-      "domain_device_entity_filters": {
-        "title": "Domain, device and entity filters (step 2 of 3)",
-        "description": "Exclude always overrides include. Nothing selected = nothing exposed.",
+        "title": "Filter configuration",
+        "description": "Choose which domains, devices, and entities are exposed to remote instances. Exclude always overrides include. Nothing selected = nothing exposed.",
         "data": {
           "include_domains": "Include domains",
           "include_devices": "Include devices",
           "include_entities": "Include entities",
           "exclude_domains": "Exclude domains",
           "exclude_devices": "Exclude devices",
-          "exclude_entities": "Exclude entities"
-        }
-      },
-      "events": {
-        "title": "Subscribed events (step 3 of 3)",
-        "description": "Add a new subscribed event by entering its name in `Add new event` and pressing Submit. Leave `Add new event` empty and press Submit to finish.",
-        "data": {
-          "subscribe_events": "Events",
-          "add_new_event": "Add new event"
+          "exclude_entities": "Exclude entities",
+          "entity_prefix": "Entity prefix (optional)",
+          "entity_friendly_name_prefix": "Entity name prefix (optional)",
+          "service_prefix": "Service prefix",
+          "services": "Remote services"
         }
       }
     },
