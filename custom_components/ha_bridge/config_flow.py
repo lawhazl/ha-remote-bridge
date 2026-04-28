@@ -7,6 +7,11 @@ from urllib.parse import urlparse
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant import config_entries, core
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 from homeassistant.const import (
     CONF_ABOVE,
     CONF_ACCESS_TOKEN,
@@ -84,6 +89,21 @@ async def validate_connection(hass: core.HomeAssistant, conf: dict) -> dict:
     except OSError as exc:
         raise CannotConnect() from exc
     return {"title": info["location_name"], "uuid": info["uuid"]}
+
+
+def _area_grouped_selector(options: dict[str, str]) -> SelectSelector:
+    """Searchable multi-select dropdown with options ordered Area › Name.
+
+    Typing an area name in the search box filters to that area's items,
+    giving the effect of area grouping alongside full text search.
+    """
+    return SelectSelector(
+        SelectSelectorConfig(
+            options=[{"value": k, "label": v} for k, v in options.items()],
+            multiple=True,
+            mode=SelectSelectorMode.DROPDOWN,
+        )
+    )
 
 
 def _local_domains(hass: core.HomeAssistant) -> list[str]:
@@ -206,11 +226,11 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Optional(CONF_INCLUDE_DOMAINS, default=[]): cv.multi_select(domains),
-                    vol.Optional(CONF_INCLUDE_DEVICES, default=[]): cv.multi_select(devices),
-                    vol.Optional(CONF_INCLUDE_ENTITIES, default=[]): cv.multi_select(entities),
+                    vol.Optional(CONF_INCLUDE_DEVICES, default=[]): _area_grouped_selector(devices),
+                    vol.Optional(CONF_INCLUDE_ENTITIES, default=[]): _area_grouped_selector(entities),
                     vol.Optional(CONF_EXCLUDE_DOMAINS, default=[]): cv.multi_select(domains),
-                    vol.Optional(CONF_EXCLUDE_DEVICES, default=[]): cv.multi_select(devices),
-                    vol.Optional(CONF_EXCLUDE_ENTITIES, default=[]): cv.multi_select(entities),
+                    vol.Optional(CONF_EXCLUDE_DEVICES, default=[]): _area_grouped_selector(devices),
+                    vol.Optional(CONF_EXCLUDE_ENTITIES, default=[]): _area_grouped_selector(entities),
                 }
             ),
         )
@@ -393,11 +413,11 @@ class HostOptionsFlowHandler(config_entries.OptionsFlowWithReload):
                     vol.Optional(
                         CONF_INCLUDE_DEVICES,
                         default=self.config_entry.options.get(CONF_INCLUDE_DEVICES) or [],
-                    ): cv.multi_select(all_devices),
+                    ): _area_grouped_selector(all_devices),
                     vol.Optional(
                         CONF_INCLUDE_ENTITIES,
                         default=self.config_entry.options.get(CONF_INCLUDE_ENTITIES) or [],
-                    ): cv.multi_select(all_entities),
+                    ): _area_grouped_selector(all_entities),
                     vol.Optional(
                         CONF_EXCLUDE_DOMAINS,
                         default=self.config_entry.options.get(CONF_EXCLUDE_DOMAINS) or [],
@@ -405,11 +425,11 @@ class HostOptionsFlowHandler(config_entries.OptionsFlowWithReload):
                     vol.Optional(
                         CONF_EXCLUDE_DEVICES,
                         default=self.config_entry.options.get(CONF_EXCLUDE_DEVICES) or [],
-                    ): cv.multi_select(all_devices),
+                    ): _area_grouped_selector(all_devices),
                     vol.Optional(
                         CONF_EXCLUDE_ENTITIES,
                         default=self.config_entry.options.get(CONF_EXCLUDE_ENTITIES) or [],
-                    ): cv.multi_select(all_entities),
+                    ): _area_grouped_selector(all_entities),
                 }
             ),
         )
