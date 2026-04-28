@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant import config_entries, core
+from homeassistant.components import persistent_notification
 from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
@@ -27,6 +28,7 @@ from homeassistant.helpers.instance_id import async_get
 from homeassistant.util import slugify
 
 from .const import (
+    CONF_APPROVED_REMOTES,
     CONF_ENTITY_PREFIX,
     CONF_ENTITY_FRIENDLY_NAME_PREFIX,
     CONF_EXCLUDE_DEVICES,
@@ -318,16 +320,43 @@ class HostOptionsFlowHandler(config_entries.OptionsFlowWithReload):
     """Options flow for host-mode entries — filter configuration only. Reloads entry on save."""
 
     async def async_step_init(self, user_input=None):
-        """Configure which domains, devices, and entities are exposed to remotes."""
+        """Remote access approval and filter configuration."""
+        pending_remotes: dict = self.hass.data.get(DOMAIN, {}).get("pending_remotes", {})
+        approved_remotes: dict = self.config_entry.options.get(CONF_APPROVED_REMOTES, {})
+
         if user_input is not None:
+            # remote_access field contains the UUIDs the user has ticked
+            newly_approved_uuids: list[str] = user_input.pop("remote_access", [])
+
+            new_approved: dict[str, str] = {}
+            for uuid in newly_approved_uuids:
+                if uuid in approved_remotes:
+                    new_approved[uuid] = approved_remotes[uuid]
+                elif uuid in pending_remotes:
+                    new_approved[uuid] = pending_remotes[uuid]["name"]
+                    pending_remotes.pop(uuid, None)
+                    persistent_notification.async_dismiss(
+                        self.hass, f"ha_bridge_pending_{uuid}"
+                    )
+
+            user_input[CONF_APPROVED_REMOTES] = new_approved
             return self.async_create_entry(title="", data=user_input)
+
+        # Build the combined remote list shown to the user:
+        # pending remotes (not yet approved) + already approved remotes.
+        all_remotes: dict[str, str] = {}
+        for uuid, info in pending_remotes.items():
+            all_remotes[uuid] = f"{info['name']} — pending approval"
+        for uuid, name in approved_remotes.items():
+            if uuid not in all_remotes:
+                all_remotes[uuid] = f"{name} — approved"
+
+        currently_approved = list(approved_remotes.keys())
 
         domains = _local_domains(self.hass)
         devices = _local_devices(self.hass)
         entities = _local_entities(self.hass)
 
-        # Merge stored IDs that may no longer exist in the live registry,
-        # appending them at the end so they remain selectable.
         stored_device_ids = set(
             self.config_entry.options.get(CONF_INCLUDE_DEVICES, [])
         ) | set(self.config_entry.options.get(CONF_EXCLUDE_DEVICES, []))
@@ -348,6 +377,10 @@ class HostOptionsFlowHandler(config_entries.OptionsFlowWithReload):
             step_id="init",
             data_schema=vol.Schema(
                 {
+                    vol.Optional(
+                        "remote_access",
+                        default=currently_approved,
+                    ): cv.multi_select(all_remotes),
                     vol.Optional(
                         CONF_INCLUDE_DOMAINS,
                         default=self.config_entry.options.get(CONF_INCLUDE_DOMAINS) or [],

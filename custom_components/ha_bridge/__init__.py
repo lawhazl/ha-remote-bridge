@@ -35,16 +35,20 @@ from homeassistant.const import (
     EVENT_HOMEASSISTANT_STOP,
     EVENT_STATE_CHANGED,
 )
+from homeassistant.components import persistent_notification
 from homeassistant.core import Context, EventOrigin, HomeAssistant, callback, split_entity_id
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.instance_id import async_get as async_get_instance_id
 from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.setup import async_setup_component
+from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_APPROVED_REMOTES,
     CONF_ENTITY_PREFIX,
     CONF_ENTITY_FRIENDLY_NAME_PREFIX,
     CONF_EXCLUDE_DOMAINS,
@@ -97,16 +101,58 @@ class RemoteHomeAssistantData:
 type RemoteHomeAssistantConfigEntry = ConfigEntry[RemoteHomeAssistantData]
 
 
-@websocket_api.websocket_command({vol.Required("type"): WS_CMD_GET_EXPOSED_ENTITIES})
+@websocket_api.websocket_command({
+    vol.Required("type"): WS_CMD_GET_EXPOSED_ENTITIES,
+    vol.Required("remote_uuid"): str,
+    vol.Optional("remote_name", default="Unknown"): str,
+})
 @websocket_api.async_response
 async def ws_get_exposed_entities(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
 ) -> None:
-    """Return filtered entity snapshot for a connecting remote instance.
+    """Return filtered entity snapshot for an approved remote, or signal pending approval."""
+    remote_uuid = msg["remote_uuid"]
+    remote_name = msg.get("remote_name", "Unknown")
 
-    Stage 1 stub — full filter logic implemented in Stage 3.
-    """
-    connection.send_result(msg["id"], {"entities": [], "devices": []})
+    # Check whether any host entry has approved this remote
+    approved_entry = None
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.data.get(CONF_ROLE) == ROLE_HOST:
+            if remote_uuid in entry.options.get(CONF_APPROVED_REMOTES, {}):
+                approved_entry = entry
+                break
+
+    if approved_entry:
+        # Dismiss any lingering pending notification
+        persistent_notification.async_dismiss(
+            hass, f"ha_bridge_pending_{remote_uuid}"
+        )
+        # Full entity snapshot returned in Stage 3 — stub for now
+        connection.send_result(msg["id"], {"status": "ok", "entities": [], "devices": []})
+        return
+
+    # Not approved — record as pending and notify the host user
+    pending = hass.data[DOMAIN].setdefault("pending_remotes", {})
+    is_new = remote_uuid not in pending
+    pending[remote_uuid] = {
+        "uuid": remote_uuid,
+        "name": remote_name,
+        "first_seen": pending.get(remote_uuid, {}).get(
+            "first_seen", dt_util.utcnow().isoformat()
+        ),
+    }
+
+    if is_new:
+        persistent_notification.async_create(
+            hass,
+            f"**{remote_name}** is requesting access to Remote Bridge.\n\n"
+            "Go to **Settings → Integrations → Remote Bridge** and open "
+            "the host configuration to approve it.",
+            title="Remote Bridge: Access Request",
+            notification_id=f"ha_bridge_pending_{remote_uuid}",
+        )
+
+    connection.send_result(msg["id"], {"status": "pending_approval"})
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -114,6 +160,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     hass.data.setdefault(DOMAIN, {
         "_view_registered": False,
         "_ws_registered": False,
+        "pending_remotes": {},  # {uuid: {uuid, name, first_seen}} — cleared on HA restart
     })
 
     async def _handle_dump_diagnostics(service) -> None:

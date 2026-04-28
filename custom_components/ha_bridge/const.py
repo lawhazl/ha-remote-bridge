@@ -25,6 +25,9 @@ CONF_EXCLUDE_ENTITIES = "exclude_entities"
 WS_CMD_GET_EXPOSED_ENTITIES = "ha_bridge/get_exposed_entities"
 
 STATE_VERSION_MISMATCH = "version_mismatch"
+STATE_PENDING_APPROVAL = "pending_approval"
+
+CONF_APPROVED_REMOTES = "approved_remotes"
 
 DOMAIN = "ha_bridge"
 
