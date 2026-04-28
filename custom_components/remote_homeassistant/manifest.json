@@ -2,9 +2,7 @@
   "domain": "remote_homeassistant",
   "name": "Home Assistant Bridge",
   "codeowners": [
-    "@jaym25",
-    "@lukas-hetzenecker",
-    "@postlund"
+    "@lawhazl"
   ],
   "config_flow": true,
   "dependencies": ["http"],
