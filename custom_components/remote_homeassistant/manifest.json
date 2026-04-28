@@ -1,6 +1,6 @@
 {
   "domain": "remote_homeassistant",
-  "name": "Remote Home-Assistant",
+  "name": "Home Assistant Bridge",
   "codeowners": [
     "@jaym25",
     "@lukas-hetzenecker",
