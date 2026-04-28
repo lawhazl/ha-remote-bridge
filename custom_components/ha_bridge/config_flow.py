@@ -7,6 +7,11 @@ from urllib.parse import urlparse
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant import config_entries, core
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 from homeassistant.const import (
     CONF_ABOVE,
     CONF_ACCESS_TOKEN,
@@ -84,6 +89,17 @@ async def validate_connection(hass: core.HomeAssistant, conf: dict) -> dict:
     except OSError as exc:
         raise CannotConnect() from exc
     return {"title": info["location_name"], "uuid": info["uuid"]}
+
+
+def _searchable_selector(options: dict[str, str] | list[str]) -> SelectSelector:
+    """Return a searchable multi-select dropdown selector."""
+    if isinstance(options, dict):
+        opts = [{"value": k, "label": v} for k, v in options.items()]
+    else:
+        opts = [{"value": v, "label": v} for v in options]
+    return SelectSelector(
+        SelectSelectorConfig(options=opts, multiple=True, mode=SelectSelectorMode.DROPDOWN)
+    )
 
 
 def _local_domains(hass: core.HomeAssistant) -> list[str]:
@@ -205,12 +221,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="host_filters",
             data_schema=vol.Schema(
                 {
-                    vol.Optional(CONF_INCLUDE_DOMAINS, default=[]): cv.multi_select(domains),
-                    vol.Optional(CONF_INCLUDE_DEVICES, default=[]): cv.multi_select(devices),
-                    vol.Optional(CONF_INCLUDE_ENTITIES, default=[]): cv.multi_select(entities),
-                    vol.Optional(CONF_EXCLUDE_DOMAINS, default=[]): cv.multi_select(domains),
-                    vol.Optional(CONF_EXCLUDE_DEVICES, default=[]): cv.multi_select(devices),
-                    vol.Optional(CONF_EXCLUDE_ENTITIES, default=[]): cv.multi_select(entities),
+                    vol.Optional(CONF_INCLUDE_DOMAINS, default=[]): _searchable_selector(domains),
+                    vol.Optional(CONF_INCLUDE_DEVICES, default=[]): _searchable_selector(devices),
+                    vol.Optional(CONF_INCLUDE_ENTITIES, default=[]): _searchable_selector(entities),
+                    vol.Optional(CONF_EXCLUDE_DOMAINS, default=[]): _searchable_selector(domains),
+                    vol.Optional(CONF_EXCLUDE_DEVICES, default=[]): _searchable_selector(devices),
+                    vol.Optional(CONF_EXCLUDE_ENTITIES, default=[]): _searchable_selector(entities),
                 }
             ),
         )
@@ -389,27 +405,27 @@ class HostOptionsFlowHandler(config_entries.OptionsFlowWithReload):
                     vol.Optional(
                         CONF_INCLUDE_DOMAINS,
                         default=self.config_entry.options.get(CONF_INCLUDE_DOMAINS) or [],
-                    ): cv.multi_select(domains),
+                    ): _searchable_selector(domains),
                     vol.Optional(
                         CONF_INCLUDE_DEVICES,
                         default=self.config_entry.options.get(CONF_INCLUDE_DEVICES) or [],
-                    ): cv.multi_select(all_devices),
+                    ): _searchable_selector(all_devices),
                     vol.Optional(
                         CONF_INCLUDE_ENTITIES,
                         default=self.config_entry.options.get(CONF_INCLUDE_ENTITIES) or [],
-                    ): cv.multi_select(all_entities),
+                    ): _searchable_selector(all_entities),
                     vol.Optional(
                         CONF_EXCLUDE_DOMAINS,
                         default=self.config_entry.options.get(CONF_EXCLUDE_DOMAINS) or [],
-                    ): cv.multi_select(domains),
+                    ): _searchable_selector(domains),
                     vol.Optional(
                         CONF_EXCLUDE_DEVICES,
                         default=self.config_entry.options.get(CONF_EXCLUDE_DEVICES) or [],
-                    ): cv.multi_select(all_devices),
+                    ): _searchable_selector(all_devices),
                     vol.Optional(
                         CONF_EXCLUDE_ENTITIES,
                         default=self.config_entry.options.get(CONF_EXCLUDE_ENTITIES) or [],
-                    ): cv.multi_select(all_entities),
+                    ): _searchable_selector(all_entities),
                 }
             ),
         )
