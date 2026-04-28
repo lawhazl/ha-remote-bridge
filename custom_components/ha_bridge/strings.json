@@ -16,6 +16,7 @@
         "title": "Filter configuration",
         "description": "Choose which entities this host exposes to the remote instance. Exclude always overrides include.",
         "data": {
+          "name": "Configuration name",
           "include_domains": "Include domains",
           "include_devices": "Include devices",
           "include_entities": "Include entities",
@@ -27,6 +28,7 @@
       "connection_details": {
         "title": "Connection details",
         "data": {
+          "name": "Configuration name",
           "host": "Host",
           "port": "Port",
           "secure": "Secure (HTTPS/WSS)",

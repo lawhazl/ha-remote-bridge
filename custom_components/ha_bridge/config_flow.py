@@ -18,6 +18,7 @@ from homeassistant.const import (
     CONF_BELOW,
     CONF_ENTITY_ID,
     CONF_HOST,
+    CONF_NAME,
     CONF_PORT,
     CONF_UNIT_OF_MEASUREMENT,
     CONF_VERIFY_SSL,
@@ -209,10 +210,11 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_host_filters(self, user_input=None):
-        """Configure initial include/exclude filters for a host-mode entry."""
+        """Configure name and initial include/exclude filters for a host-mode entry."""
         if user_input is not None:
+            title = user_input.pop(CONF_NAME)
             return self.async_create_entry(
-                title="HA Bridge (Host)",
+                title=title,
                 data={CONF_ROLE: ROLE_HOST},
                 options=user_input,
             )
@@ -220,11 +222,13 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         domains = _local_domains(self.hass)
         devices = _local_devices(self.hass)
         entities = _local_entities(self.hass)
+        default_name = f"{self.hass.config.location_name} (Host)"
 
         return self.async_show_form(
             step_id="host_filters",
             data_schema=vol.Schema(
                 {
+                    vol.Required(CONF_NAME, default=default_name): str,
                     vol.Optional(CONF_INCLUDE_DOMAINS, default=[]): cv.multi_select(domains),
                     vol.Optional(CONF_INCLUDE_DEVICES, default=[]): _area_grouped_selector(devices),
                     vol.Optional(CONF_INCLUDE_ENTITIES, default=[]): _area_grouped_selector(entities),
@@ -258,19 +262,22 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 await self.async_set_unique_id(info["uuid"])
                 self._abort_if_unique_id_configured()
+                title = user_input.pop(CONF_NAME)
                 data = {CONF_ROLE: ROLE_REMOTE, **user_input}
-                return self.async_create_entry(title=info["title"], data=data)
+                return self.async_create_entry(title=title, data=data)
 
         host = self.prefill.get(CONF_HOST, vol.UNDEFINED)
         port = self.prefill.get(CONF_PORT, vol.UNDEFINED)
         secure = self.prefill.get(CONF_SECURE, vol.UNDEFINED)
         max_msg_size = self.prefill.get(CONF_MAX_MSG_SIZE, vol.UNDEFINED)
+        default_name = f"{self.hass.config.location_name} (Remote)"
 
         user_input = user_input or {}
         return self.async_show_form(
             step_id="connection_details",
             data_schema=vol.Schema(
                 {
+                    vol.Required(CONF_NAME, default=user_input.get(CONF_NAME, default_name)): str,
                     vol.Required(CONF_HOST, default=user_input.get(CONF_HOST, host)): str,
                     vol.Required(CONF_PORT, default=user_input.get(CONF_PORT, port)): int,
                     vol.Required(
