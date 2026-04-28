@@ -1,0 +1,101 @@
+{
+  "config": {
+    "flow_title": "HA Bridge: {name}",
+    "step": {
+      "user": {
+        "title": "Select mode",
+        "description": "Choose how this Home Assistant instance participates in the bridge.",
+        "data": {
+          "role": "Mode"
+        },
+        "data_description": {
+          "role": "Host mode: this instance exposes entities to remotes. Remote mode: this instance mirrors entities from a host."
+        }
+      },
+      "host_filters": {
+        "title": "Filter configuration",
+        "description": "Choose which entities this host exposes to the remote instance. Exclude always overrides include.",
+        "data": {
+          "include_domains": "Include domains",
+          "include_devices": "Include devices",
+          "include_entities": "Include entities",
+          "exclude_domains": "Exclude domains",
+          "exclude_devices": "Exclude devices",
+          "exclude_entities": "Exclude entities"
+        }
+      },
+      "connection_details": {
+        "title": "Connection details",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "secure": "Secure (HTTPS/WSS)",
+          "verify_ssl": "Verify SSL certificate",
+          "access_token": "Long-lived access token",
+          "max_message_size": "Maximum WebSocket message size (bytes)"
+        }
+      }
+    },
+    "error": {
+      "api_problem": "Bad response from server",
+      "cannot_connect": "Failed to connect to server",
+      "invalid_auth": "Invalid credentials",
+      "unsupported_version": "Unsupported Home Assistant version. At least 0.111 is required.",
+      "version_mismatch": "Integration version mismatch between host and remote. Both instances must run the same version.",
+      "unknown": "An unknown error occurred",
+      "missing_endpoint": "Remote Home-Assistant is not installed or not in host mode on that instance."
+    },
+    "abort": {
+      "already_configured": "Already configured",
+      "import_failed": "Import failed"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Basic options (step 1 of 4)",
+        "data": {
+          "entity_prefix": "Entity prefix (optional)",
+          "entity_friendly_name_prefix": "Entity name prefix (optional)",
+          "load_components": "Load component if not loaded",
+          "service_prefix": "Service prefix",
+          "services": "Remote services"
+        }
+      },
+      "domain_device_entity_filters": {
+        "title": "Domain, device and entity filters (step 2 of 4)",
+        "description": "Exclude always overrides include. Nothing selected = nothing exposed.",
+        "data": {
+          "include_domains": "Include domains",
+          "include_devices": "Include devices",
+          "include_entities": "Include entities",
+          "exclude_domains": "Exclude domains",
+          "exclude_devices": "Exclude devices",
+          "exclude_entities": "Exclude entities"
+        }
+      },
+      "general_filters": {
+        "title": "Filters (step 3 of 4)",
+        "description": "Add a new filter by specifying `Entity ID`, one or more filter attributes and pressing Submit. Remove existing filters by unticking them. Leave `Entity ID` empty and press Submit to proceed.",
+        "data": {
+          "filter": "Filters",
+          "entity_id": "Entity ID pattern",
+          "unit_of_measurement": "Unit of measurement",
+          "above": "Above",
+          "below": "Below"
+        }
+      },
+      "events": {
+        "title": "Subscribed events (step 4 of 4)",
+        "description": "Add a new subscribed event by entering its name in `Add new event` and pressing Submit. Leave `Add new event` empty and press Submit to finish.",
+        "data": {
+          "subscribe_events": "Events",
+          "add_new_event": "Add new event"
+        }
+      }
+    },
+    "abort": {
+      "not_supported": "No configuration options are supported for this entry type"
+    }
+  }
+}

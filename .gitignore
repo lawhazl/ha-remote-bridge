@@ -1,0 +1,7 @@
+source/
+remote_homeassistant-4.6.zip
+custom_components/remote_homeassistant/logs/
+CLAUDE.md
+.DS_Store
+__pycache__/
+*.pyc

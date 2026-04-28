@@ -1,0 +1,6 @@
+dump_diagnostics:
+  name: Dump Diagnostics
+  description: >
+    Log a structured diagnostics snapshot for this integration.
+    On host: logs filter config and connected remote count.
+    On remote: logs connection state, mirrored entity/device counts.
