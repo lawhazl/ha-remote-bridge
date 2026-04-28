@@ -20,7 +20,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
 
 class ConnectionStatusSensor(SensorEntity):
-    """Representation of a remote_homeassistant connection status sensor."""
+    """Representation of a ha_bridge connection status sensor."""
 
     _attr_has_entity_name = True
     _attr_name = "Connection"
@@ -71,7 +71,7 @@ class ConnectionStatusSensor(SensorEntity):
             self._native_value = state
             self.async_write_ha_state()
 
-        signal = f"remote_homeassistant_{self._entry.unique_id}"
+        signal = f"ha_bridge_{self._entry.unique_id}"
         self.async_on_remove(
             async_dispatcher_connect(self.hass, signal, _update_handler)
         )

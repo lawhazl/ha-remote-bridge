@@ -22,11 +22,11 @@ CONF_EXCLUDE_DOMAINS = "exclude_domains"
 CONF_EXCLUDE_DEVICES = "exclude_devices"
 CONF_EXCLUDE_ENTITIES = "exclude_entities"
 
-WS_CMD_GET_EXPOSED_ENTITIES = "remote_homeassistant/get_exposed_entities"
+WS_CMD_GET_EXPOSED_ENTITIES = "ha_bridge/get_exposed_entities"
 
 STATE_VERSION_MISMATCH = "version_mismatch"
 
-DOMAIN = "remote_homeassistant"
+DOMAIN = "ha_bridge"
 
 # replaces 'from homeassistant.core import SERVICE_CALL_LIMIT'
 SERVICE_CALL_LIMIT = 10

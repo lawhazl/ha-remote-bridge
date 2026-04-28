@@ -24,8 +24,8 @@ def get_integration_version() -> str:
 class DiscoveryInfoView(HomeAssistantView):
     """Discovery endpoint for HA Bridge host instances."""
 
-    url = "/api/remote_homeassistant/discovery"
-    name = "api:remote_homeassistant:discovery"
+    url = "/api/ha_bridge/discovery"
+    name = "api:ha_bridge:discovery"
 
     async def get(self, request):
         """Get discovery information."""

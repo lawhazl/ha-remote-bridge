@@ -110,7 +110,7 @@ async def ws_get_exposed_entities(
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up the remote_homeassistant component."""
+    """Set up the ha_bridge component."""
     hass.data.setdefault(DOMAIN, {
         "_view_registered": False,
         "_ws_registered": False,
@@ -285,7 +285,7 @@ class RemoteConnection:
 
     def set_connection_state(self, state: str) -> None:
         """Broadcast current connection state via dispatcher."""
-        signal = f"remote_homeassistant_{self._entry.unique_id}"
+        signal = f"ha_bridge_{self._entry.unique_id}"
         async_dispatcher_send(self._hass, signal, state)
 
     @callback
@@ -608,7 +608,7 @@ class RemoteConnection:
             entity_registry = er.async_get(self._hass)
             entity_registry.async_get_or_create(
                 domain=domain,
-                platform="remote_homeassistant",
+                platform="ha_bridge",
                 unique_id=attr["unique_id"],
                 suggested_object_id=object_id,
             )

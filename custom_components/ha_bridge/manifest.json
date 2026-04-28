@@ -1,17 +1,17 @@
 {
-  "domain": "remote_homeassistant",
+  "domain": "ha_bridge",
   "name": "Home Assistant Bridge",
   "codeowners": [
     "@lawhazl"
   ],
   "config_flow": true,
   "dependencies": ["http"],
-  "documentation": "https://github.com/custom-components/remote_homeassistant",
+  "documentation": "https://github.com/lawhazl/ha-remote-bridge",
   "integration_type": "hub",
   "iot_class": "local_push",
-  "issue_tracker": "https://github.com/custom-components/remote_homeassistant/issues",
+  "issue_tracker": "https://github.com/lawhazl/ha-remote-bridge/issues",
   "loggers": [
-    "custom_components.remote_homeassistant"
+    "custom_components.ha_bridge"
   ],
   "requirements": [],
   "version": "1.0.0",
