@@ -1,6 +1,6 @@
 {
   "config": {
-    "flow_title": "HA Bridge: {name}",
+    "flow_title": "Remote Bridge: {name}",
     "step": {
       "user": {
         "title": "Select mode",
@@ -50,7 +50,7 @@
     "abort": {
       "already_configured": "Already configured",
       "import_failed": "Import failed",
-      "not_ha_bridge_host": "This Home Assistant instance does not have HA Bridge installed in host mode."
+      "not_ha_bridge_host": "This Home Assistant instance does not have Remote Bridge installed in host mode."
     }
   },
   "options": {

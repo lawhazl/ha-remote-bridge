@@ -35,7 +35,7 @@ class VersionMismatch(exceptions.HomeAssistantError):
 
 
 async def async_probe_host(hass, host, port, secure, verify_ssl):
-    """Check if a host has ha_bridge running in host mode (no auth required)."""
+    """Check if a host has Remote Bridge running in host mode (no auth required)."""
     url = API_URL.format(
         proto="https" if secure else "http",
         host=host,

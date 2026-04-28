@@ -20,7 +20,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
 
 class ConnectionStatusSensor(SensorEntity):
-    """Representation of a ha_bridge connection status sensor."""
+    """Representation of a Remote Bridge connection status sensor."""
 
     _attr_has_entity_name = True
     _attr_name = "Connection"

@@ -22,7 +22,7 @@ def get_integration_version() -> str:
 
 
 class DiscoveryInfoView(HomeAssistantView):
-    """Discovery endpoint for HA Bridge host instances."""
+    """Discovery endpoint for Remote Bridge host instances."""
 
     url = "/api/ha_bridge/discovery"
     name = "api:ha_bridge:discovery"

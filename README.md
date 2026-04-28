@@ -1,4 +1,4 @@
-# Home Assistant Bridge
+# Remote Bridge
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 
@@ -30,7 +30,7 @@ Remote Home-Assistant Bridge links a **host** instance to a **remote** instance 
 1. Open HACS in your Home Assistant
 2. Go to **Integrations → Custom repositories**
 3. Add `https://github.com/lawhazl/ha-remote-bridge` and select **Integration** as the category
-4. Find **Home Assistant Bridge** and install it
+4. Find **Remote Bridge** and install it
 5. Restart Home Assistant
 6. Repeat on the second instance
 
@@ -43,14 +43,14 @@ Install the integration on the host instance first, then on the remote.
 ### Host instance
 
 1. Go to **Settings → Integrations → Add Integration**
-2. Search for **Home Assistant Bridge**
+2. Search for **Remote Bridge**
 3. Select **Host mode**
 4. Choose which domains, devices, and entities to expose
 
 ### Remote instance
 
 1. Go to **Settings → Integrations → Add Integration**
-2. Search for **Home Assistant Bridge**
+2. Search for **Remote Bridge**
 3. Select **Remote mode**
 4. Enter the host address, port, and a long-lived access token from the host
 5. The integration verifies the connection before completing — if the versions don't match, setup is blocked until both sides are on the same version

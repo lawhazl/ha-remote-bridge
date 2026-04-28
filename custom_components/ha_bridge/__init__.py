@@ -110,7 +110,7 @@ async def ws_get_exposed_entities(
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up the ha_bridge component."""
+    """Set up the Remote Bridge component."""
     hass.data.setdefault(DOMAIN, {
         "_view_registered": False,
         "_ws_registered": False,
