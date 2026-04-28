@@ -320,6 +320,9 @@ class HostOptionsFlowHandler(config_entries.OptionsFlowWithReload):
     """Options flow for host-mode entries — filter configuration only. Reloads entry on save."""
 
     async def async_step_init(self, user_input=None):
+        return await self.async_step_host_settings(user_input)
+
+    async def async_step_host_settings(self, user_input=None):
         """Remote access approval and filter configuration."""
         pending_remotes: dict = self.hass.data.get(DOMAIN, {}).get("pending_remotes", {})
         approved_remotes: dict = self.config_entry.options.get(CONF_APPROVED_REMOTES, {})
@@ -374,7 +377,7 @@ class HostOptionsFlowHandler(config_entries.OptionsFlowWithReload):
                 all_entities[eid] = eid
 
         return self.async_show_form(
-            step_id="init",
+            step_id="host_settings",
             data_schema=vol.Schema(
                 {
                     vol.Optional(
@@ -414,6 +417,10 @@ class RemoteOptionsFlowHandler(config_entries.OptionsFlowWithReload):
     """Options flow for remote-mode entries — 1 step (service proxy settings). Reloads entry on save."""
 
     async def async_step_init(self, user_input=None):
+        """Entry point — delegate to remote_settings step."""
+        return await self.async_step_remote_settings(user_input)
+
+    async def async_step_remote_settings(self, user_input=None):
         """Manage remote options: prefixes, service proxy."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
@@ -428,7 +435,7 @@ class RemoteOptionsFlowHandler(config_entries.OptionsFlowWithReload):
             pass
 
         return self.async_show_form(
-            step_id="init",
+            step_id="remote_settings",
             data_schema=vol.Schema(
                 {
                     vol.Optional(

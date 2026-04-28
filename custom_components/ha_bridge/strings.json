@@ -55,8 +55,8 @@
   },
   "options": {
     "step": {
-      "init": {
-        "title": "Filter configuration",
+      "host_settings": {
+        "title": "Filters & Remote Access",
         "description": "Choose which domains, devices, and entities are exposed to remote instances. Exclude always overrides include. Nothing selected = nothing exposed.",
         "data": {
           "remote_access": "Remote instances",
@@ -65,7 +65,13 @@
           "include_entities": "Include entities",
           "exclude_domains": "Exclude domains",
           "exclude_devices": "Exclude devices",
-          "exclude_entities": "Exclude entities",
+          "exclude_entities": "Exclude entities"
+        }
+      },
+      "remote_settings": {
+        "title": "Remote Settings",
+        "description": "Configure prefixes and service proxy settings for this remote connection.",
+        "data": {
           "entity_prefix": "Entity prefix (optional)",
           "entity_friendly_name_prefix": "Entity name prefix (optional)",
           "service_prefix": "Service prefix",
