@@ -47,7 +47,8 @@
     },
     "abort": {
       "already_configured": "Already configured",
-      "import_failed": "Import failed"
+      "import_failed": "Import failed",
+      "not_ha_bridge_host": "This Home Assistant instance does not have HA Bridge installed in host mode."
     }
   },
   "options": {

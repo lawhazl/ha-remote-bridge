@@ -26,6 +26,7 @@ class DiscoveryInfoView(HomeAssistantView):
 
     url = "/api/ha_bridge/discovery"
     name = "api:ha_bridge:discovery"
+    requires_auth = False
 
     async def get(self, request):
         """Get discovery information."""

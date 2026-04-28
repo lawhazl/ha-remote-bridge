@@ -34,6 +34,26 @@ class VersionMismatch(exceptions.HomeAssistantError):
     """Error to indicate the integration versions on host and remote do not match."""
 
 
+async def async_probe_host(hass, host, port, secure, verify_ssl):
+    """Check if a host has ha_bridge running in host mode (no auth required)."""
+    url = API_URL.format(
+        proto="https" if secure else "http",
+        host=host,
+        port=port,
+    )
+    session = async_get_clientsession(hass, verify_ssl)
+    try:
+        async with session.get(url) as resp:
+            if resp.status == 404:
+                raise EndpointMissing()
+            if resp.status != 200:
+                raise ApiProblem()
+    except (EndpointMissing, ApiProblem):
+        raise
+    except Exception as exc:
+        raise CannotConnect() from exc
+
+
 async def async_get_discovery_info(hass, host, port, secure, access_token, verify_ssl):
     """Get discovery information from server."""
     url = API_URL.format(

@@ -52,6 +52,7 @@ from .rest_api import (
     InvalidAuth,
     UnsupportedVersion,
     async_get_discovery_info,
+    async_probe_host,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -234,19 +235,26 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         port = discovery_info.port
         uuid = properties["uuid"]
 
-        await self.async_set_unique_id(uuid)
-        self._abort_if_unique_id_configured()
-
         if await async_get(self.hass) == uuid:
             return self.async_abort(reason="already_configured")
 
+        await self.async_set_unique_id(uuid)
+        self._abort_if_unique_id_configured()
+
         url = properties.get("internal_url") or properties.get("base_url")
-        url = urlparse(url)
+        parsed = urlparse(url)
+        host = parsed.hostname
+        secure = parsed.scheme == "https"
+
+        try:
+            await async_probe_host(self.hass, host, port, secure, False)
+        except (EndpointMissing, CannotConnect, ApiProblem):
+            return self.async_abort(reason="not_ha_bridge_host")
 
         self.prefill = {
-            CONF_HOST: url.hostname,
+            CONF_HOST: host,
             CONF_PORT: port,
-            CONF_SECURE: url.scheme == "https",
+            CONF_SECURE: secure,
             CONF_MAX_MSG_SIZE: DEFAULT_MAX_MSG_SIZE,
         }
 
