@@ -18,6 +18,7 @@ from homeassistant.const import (
     CONF_VERIFY_SSL,
 )
 from homeassistant.core import callback
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.instance_id import async_get
@@ -89,17 +90,57 @@ def _local_domains(hass: core.HomeAssistant) -> list[str]:
     return sorted({s.domain for s in hass.states.async_all()})
 
 
+def _area_name(area_reg: ar.AreaRegistry, area_id: str | None) -> str:
+    if area_id:
+        area = area_reg.async_get_area(area_id)
+        if area:
+            return area.name
+    return ""
+
+
 def _local_devices(hass: core.HomeAssistant) -> dict[str, str]:
-    return {
-        device.id: device.name_by_user or device.name or device.id
-        for device in dr.async_get(hass).devices.values()
-    }
+    area_reg = ar.async_get(hass)
+    device_reg = dr.async_get(hass)
+
+    rows: list[tuple[str, str, str]] = []
+    for device in device_reg.devices.values():
+        name = device.name_by_user or device.name or device.id
+        area = _area_name(area_reg, device.area_id)
+        rows.append((area, name, device.id))
+
+    rows.sort(key=lambda x: (x[0] == "", x[0].casefold(), x[1].casefold()))
+
+    result: dict[str, str] = {}
+    for area, name, device_id in rows:
+        label = f"{area} › {name}" if area else name
+        result[device_id] = label
+    return result
 
 
-def _local_entities(hass: core.HomeAssistant) -> list[str]:
-    return sorted(
-        entry.entity_id for entry in er.async_get(hass).entities.values()
-    )
+def _local_entities(hass: core.HomeAssistant) -> dict[str, str]:
+    area_reg = ar.async_get(hass)
+    device_reg = dr.async_get(hass)
+    entity_reg = er.async_get(hass)
+
+    rows: list[tuple[str, str, str]] = []
+    for entry in entity_reg.entities.values():
+        if entry.area_id:
+            area = _area_name(area_reg, entry.area_id)
+        elif entry.device_id:
+            device = device_reg.async_get(entry.device_id)
+            area = _area_name(area_reg, device.area_id if device else None)
+        else:
+            area = ""
+        name = entry.name or entry.original_name or entry.entity_id
+        rows.append((area, name, entry.entity_id))
+
+    rows.sort(key=lambda x: (x[0] == "", x[0].casefold(), x[1].casefold()))
+
+    result: dict[str, str] = {}
+    for area, name, entity_id in rows:
+        label = f"{area} › {name}" if area else name
+        result[entity_id] = label
+    return result
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -323,24 +364,23 @@ class HostOptionsFlowHandler(config_entries.OptionsFlowWithReload):
         devices = _local_devices(self.hass)
         entities = _local_entities(self.hass)
 
-        # Preserve any previously-configured values that may no longer be in live HA
-        stored_include_entities = set(
-            self.config_entry.options.get(CONF_INCLUDE_ENTITIES, [])
-        )
-        stored_exclude_entities = set(
-            self.config_entry.options.get(CONF_EXCLUDE_ENTITIES, [])
-        )
-        all_entities = sorted(set(entities) | stored_include_entities | stored_exclude_entities)
-
-        stored_include_devices = set(
+        # Merge stored IDs that may no longer exist in the live registry,
+        # appending them at the end so they remain selectable.
+        stored_device_ids = set(
             self.config_entry.options.get(CONF_INCLUDE_DEVICES, [])
-        )
-        stored_exclude_devices = set(
-            self.config_entry.options.get(CONF_EXCLUDE_DEVICES, [])
-        )
-        # Merge stored device IDs; new device IDs not in registry will show as unknown
-        all_device_ids = set(devices.keys()) | stored_include_devices | stored_exclude_devices
-        all_devices = {did: devices.get(did, did) for did in all_device_ids}
+        ) | set(self.config_entry.options.get(CONF_EXCLUDE_DEVICES, []))
+        all_devices = dict(devices)
+        for did in stored_device_ids:
+            if did not in all_devices:
+                all_devices[did] = did
+
+        stored_entity_ids = set(
+            self.config_entry.options.get(CONF_INCLUDE_ENTITIES, [])
+        ) | set(self.config_entry.options.get(CONF_EXCLUDE_ENTITIES, []))
+        all_entities = dict(entities)
+        for eid in sorted(stored_entity_ids):
+            if eid not in all_entities:
+                all_entities[eid] = eid
 
         return self.async_show_form(
             step_id="domain_device_entity_filters",
