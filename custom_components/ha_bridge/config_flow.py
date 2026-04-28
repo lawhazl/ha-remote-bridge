@@ -1,7 +1,7 @@
 """Config flow for Remote Home-Assistant integration."""
 from __future__ import annotations
 import logging
-from typing import Any, Mapping
+from typing import Any
 from urllib.parse import urlparse
 
 import homeassistant.helpers.config_validation as cv
@@ -13,14 +13,10 @@ from homeassistant.helpers.selector import (
     SelectSelectorMode,
 )
 from homeassistant.const import (
-    CONF_ABOVE,
     CONF_ACCESS_TOKEN,
-    CONF_BELOW,
-    CONF_ENTITY_ID,
     CONF_HOST,
     CONF_NAME,
     CONF_PORT,
-    CONF_UNIT_OF_MEASUREMENT,
     CONF_VERIFY_SSL,
 )
 from homeassistant.core import callback
@@ -36,7 +32,6 @@ from .const import (
     CONF_EXCLUDE_DEVICES,
     CONF_EXCLUDE_DOMAINS,
     CONF_EXCLUDE_ENTITIES,
-    CONF_FILTER,
     CONF_INCLUDE_DEVICES,
     CONF_INCLUDE_DOMAINS,
     CONF_INCLUDE_ENTITIES,
@@ -65,15 +60,6 @@ from .rest_api import (
 _LOGGER = logging.getLogger(__name__)
 
 ADD_NEW_EVENT = "add_new_event"
-FILTER_OPTIONS = [CONF_ENTITY_ID, CONF_UNIT_OF_MEASUREMENT, CONF_ABOVE, CONF_BELOW]
-
-
-def _filter_str(index: int, filter_conf: Mapping[str, str | float]) -> str:
-    entity_id = filter_conf.get(CONF_ENTITY_ID)
-    unit = filter_conf.get(CONF_UNIT_OF_MEASUREMENT)
-    above = filter_conf.get(CONF_ABOVE)
-    below = filter_conf.get(CONF_BELOW)
-    return f"{index + 1}. {entity_id}, unit: {unit}, above: {above}, below: {below}"
 
 
 async def validate_connection(hass: core.HomeAssistant, conf: dict) -> dict:
@@ -332,11 +318,10 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class HostOptionsFlowHandler(config_entries.OptionsFlowWithReload):
-    """Options flow for host-mode entries — 4 steps. Reloads entry on save."""
+    """Options flow for host-mode entries — 3 steps. Reloads entry on save."""
 
     def __init__(self):
         self.options: dict[str, Any] | None = None
-        self.filters: list[Any] | None = None
         self.events: set[Any] | None = None
 
     async def async_step_init(self, user_input=None):
@@ -385,7 +370,7 @@ class HostOptionsFlowHandler(config_entries.OptionsFlowWithReload):
         """Step 2 — include/exclude domain, device, and entity filters."""
         if user_input is not None:
             self.options.update(user_input)
-            return await self.async_step_general_filters()
+            return await self.async_step_events()
 
         domains = _local_domains(self.hass)
         devices = _local_devices(self.hass)
@@ -441,44 +426,8 @@ class HostOptionsFlowHandler(config_entries.OptionsFlowWithReload):
             ),
         )
 
-    async def async_step_general_filters(self, user_input=None):
-        """Step 3 — numeric range filters."""
-        if user_input is not None:
-            if CONF_ENTITY_ID not in user_input:
-                selected_indices = [
-                    int(item.split(".")[0]) - 1
-                    for item in user_input.get(CONF_FILTER, [])
-                ]
-                self.options[CONF_FILTER] = [self.filters[i] for i in selected_indices]
-                return await self.async_step_events()
-
-            selected = user_input.get(CONF_FILTER, [])
-            new_filter = {conf: user_input.get(conf) for conf in FILTER_OPTIONS}
-            selected.append(_filter_str(len(self.filters), new_filter))
-            self.filters.append(new_filter)
-        else:
-            self.filters = self.config_entry.options.get(CONF_FILTER, [])
-            selected = [_filter_str(i, f) for i, f in enumerate(self.filters)]
-
-        if self.filters is None:
-            self.filters = []
-        strings = [_filter_str(i, f) for i, f in enumerate(self.filters)]
-
-        return self.async_show_form(
-            step_id="general_filters",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(CONF_FILTER, default=selected): cv.multi_select(strings),
-                    vol.Optional(CONF_ENTITY_ID): str,
-                    vol.Optional(CONF_UNIT_OF_MEASUREMENT): str,
-                    vol.Optional(CONF_ABOVE): vol.Coerce(float),
-                    vol.Optional(CONF_BELOW): vol.Coerce(float),
-                }
-            ),
-        )
-
     async def async_step_events(self, user_input=None):
-        """Step 4 — event subscriptions."""
+        """Step 3 — event subscriptions."""
         if user_input is not None:
             if ADD_NEW_EVENT not in user_input:
                 self.options[CONF_SUBSCRIBE_EVENTS] = user_input.get(

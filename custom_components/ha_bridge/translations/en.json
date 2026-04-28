@@ -56,7 +56,7 @@
   "options": {
     "step": {
       "init": {
-        "title": "Basic options (step 1 of 4)",
+        "title": "Basic options (step 1 of 3)",
         "data": {
           "entity_prefix": "Entity prefix (optional)",
           "entity_friendly_name_prefix": "Entity name prefix (optional)",
@@ -66,7 +66,7 @@
         }
       },
       "domain_device_entity_filters": {
-        "title": "Domain, device and entity filters (step 2 of 4)",
+        "title": "Domain, device and entity filters (step 2 of 3)",
         "description": "Exclude always overrides include. Nothing selected = nothing exposed.",
         "data": {
           "include_domains": "Include domains",
@@ -77,19 +77,8 @@
           "exclude_entities": "Exclude entities"
         }
       },
-      "general_filters": {
-        "title": "Filters (step 3 of 4)",
-        "description": "Add a new filter by specifying `Entity ID`, one or more filter attributes and pressing Submit. Remove existing filters by unticking them. Leave `Entity ID` empty and press Submit to proceed.",
-        "data": {
-          "filter": "Filters",
-          "entity_id": "Entity ID pattern",
-          "unit_of_measurement": "Unit of measurement",
-          "above": "Above",
-          "below": "Below"
-        }
-      },
       "events": {
-        "title": "Subscribed events (step 4 of 4)",
+        "title": "Subscribed events (step 3 of 3)",
         "description": "Add a new subscribed event by entering its name in `Add new event` and pressing Submit. Leave `Add new event` empty and press Submit to finish.",
         "data": {
           "subscribe_events": "Events",
