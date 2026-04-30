@@ -752,40 +752,60 @@ class RemoteConnection:
 
     async def _init(self) -> None:
         async def forward_event(event):
-            """Forward local service calls to remote for mirrored entities."""
+            """Forward local service calls to the host for mirrored entities.
+
+            Modern HA (2022.9+) puts entity_id in event_data["target"]["entity_id"]
+            rather than event_data["service_data"]["entity_id"]. We check both.
+            The forwarded message also uses the target format so the host accepts it.
+            """
             event_data = event.data
-            service_data = event_data["service_data"]
+            service_data = event_data.get("service_data", {})
+            target = event_data.get("target", {})
 
-            if not service_data:
+            # Find entity_ids: modern HA uses target, older HA uses service_data
+            raw_ids = (
+                target.get("entity_id")
+                or service_data.get("entity_id")
+            )
+            if not raw_ids:
                 return
 
-            entity_ids = service_data.get("entity_id", None)
-            if not entity_ids:
+            if isinstance(raw_ids, str):
+                raw_ids = (raw_ids.lower(),)
+            else:
+                raw_ids = tuple(e.lower() for e in raw_ids)
+
+            # Keep only entity_ids that belong to this remote connection
+            entities = {e.lower() for e in self._entities}
+            matched_ids = entities.intersection(raw_ids)
+
+            if not matched_ids:
                 return
 
-            if isinstance(entity_ids, str):
-                entity_ids = (entity_ids.lower(),)
-
-            entities = {entity_id.lower() for entity_id in self._entities}
-            entity_ids = entities.intersection(entity_ids)
-
-            if not entity_ids:
-                return
-
+            # Strip prefix before forwarding — host uses un-prefixed IDs
             if self._entity_prefix:
                 def _remove_prefix(entity_id):
                     domain, object_id = split_entity_id(entity_id)
                     object_id = object_id.replace(self._entity_prefix.lower(), "", 1)
                     return domain + "." + object_id
-                entity_ids = {_remove_prefix(eid) for eid in entity_ids}
+                matched_ids = {_remove_prefix(eid) for eid in matched_ids}
 
             event_data = copy.deepcopy(event_data)
-            event_data["service_data"]["entity_id"] = list(entity_ids)
             event_data.pop("service_call_id", None)
+
+            # Always forward with target so the host handles it correctly on
+            # both old and new HA versions.
+            event_data.setdefault("target", {})
+            event_data["target"]["entity_id"] = list(matched_ids)
+            # Remove entity_id from service_data if it crept in (old format)
+            event_data.get("service_data", {}).pop("entity_id", None)
 
             _id = self._next_id()
             data = {"id": _id, "type": event.event_type, **event_data}
-            _LOGGER.debug("forward event type=%s", event.event_type)
+            _LOGGER.debug(
+                "Forwarding %s.%s for %s",
+                event_data.get("domain"), event_data.get("service"), list(matched_ids),
+            )
 
             if self._connection is None or self._connection.closed:
                 _LOGGER.debug("Dropping forwarded event — connection not open")
@@ -866,6 +886,12 @@ class RemoteConnection:
         def fire_event(message: dict) -> None:
             """Publish remote event on local instance."""
             if message["type"] == "result":
+                # Log subscribe_events failures so we can diagnose missing updates
+                if not message.get("success", True):
+                    _LOGGER.error(
+                        "subscribe_events failed on host: %s",
+                        message.get("error", {}),
+                    )
                 return
             if message["type"] != "event":
                 return
