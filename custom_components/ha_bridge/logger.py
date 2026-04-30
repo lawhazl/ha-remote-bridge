@@ -85,11 +85,14 @@ class _IntegrationFileHandler(logging.Handler):
         try:
             module = record.name.rsplit(".", 1)[-1]
             timestamp = datetime.now().isoformat(timespec="seconds")
+            message = record.getMessage()
+            if len(message) > 500:
+                message = message[:500] + "… [truncated]"
             line = _DEBUG_FORMAT.format(
                 timestamp=timestamp,
                 level=record.levelname,
                 module=module,
-                message=record.getMessage(),
+                message=message,
             )
             _LOG_EXECUTOR.submit(_write_line_sync, self._log_dir, line)
         except Exception:

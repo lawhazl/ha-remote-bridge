@@ -555,7 +555,18 @@ class RemoteConnection:
             if message is None:
                 break
 
-            _LOGGER.debug("received: %s", message)
+            msg_type = message.get("type", "?")
+            if msg_type == "event":
+                evt = message.get("event", {})
+                evt_type = evt.get("event_type", "?")
+                entity_id = evt.get("data", {}).get("entity_id", "")
+                _LOGGER.debug(
+                    "received: type=event event_type=%s%s",
+                    evt_type,
+                    f" entity={entity_id}" if entity_id else "",
+                )
+            else:
+                _LOGGER.debug("received: type=%s id=%s", msg_type, message.get("id", "?"))
 
             if message["type"] == api.TYPE_AUTH_OK:
                 self.set_connection_state(STATE_CONNECTED)
