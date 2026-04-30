@@ -2,6 +2,7 @@
 from __future__ import annotations
 import asyncio
 import logging
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from homeassistant.core import HomeAssistant
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+_LOG_LOCK = threading.Lock()  # Serialise file writes across executor threads
 
 _LOG_FORMAT = "[{timestamp}] [{mode}] [{stage}] {message}"
 
@@ -26,7 +28,7 @@ def _write_log_sync(log_dir: Path, mode: str, stage: str, message: str) -> None:
         log_file = log_dir / f"{DOMAIN}_{today}.log"
         timestamp = datetime.now().isoformat(timespec="seconds")
         line = _LOG_FORMAT.format(timestamp=timestamp, mode=mode, stage=stage, message=message)
-        with open(log_file, "a", encoding="utf-8") as f:
+        with _LOG_LOCK, open(log_file, "a", encoding="utf-8") as f:
             f.write(line + "\n")
     except Exception as err:
         _LOGGER.error("Failed to write to integration log: %s", err)

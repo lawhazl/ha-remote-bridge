@@ -54,6 +54,7 @@ from .const import (
     CONF_EXCLUDE_DOMAINS,
     CONF_EXCLUDE_ENTITIES,
     CONF_FILTER,
+    CONF_INCLUDE_DEVICES,
     CONF_INCLUDE_DOMAINS,
     CONF_INCLUDE_ENTITIES,
     CONF_LOAD_COMPONENTS,
@@ -179,25 +180,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not hass.data[DOMAIN].get("_view_registered"):
             hass.http.register_view(DiscoveryInfoView())
             hass.data[DOMAIN]["_view_registered"] = True
+            log(hass, "HOST", "STARTUP", f"Discovery endpoint registered: /api/ha_bridge/discovery")
 
         if not hass.data[DOMAIN].get("_ws_registered"):
             websocket_api.async_register_command(hass, ws_get_exposed_entities)
             hass.data[DOMAIN]["_ws_registered"] = True
+            log(hass, "HOST", "STARTUP", f"WebSocket command registered: {WS_CMD_GET_EXPOSED_ENTITIES}")
 
         entry.runtime_data = RemoteHomeAssistantData(connection=None)
 
-        log(hass, "HOST", "STARTUP", f"v{version} starting in HOST mode")
-
         include_domains = entry.options.get(CONF_INCLUDE_DOMAINS, [])
-        include_devices = entry.options.get("include_devices", [])
+        include_devices = entry.options.get(CONF_INCLUDE_DEVICES, [])
         include_entities = entry.options.get(CONF_INCLUDE_ENTITIES, [])
         log(
-            hass, "HOST", "CONFIG",
-            f"Filter config loaded: {len(include_devices)} devices, "
-            f"{len(include_entities)} entities, {len(include_domains)} domains",
+            hass, "HOST", "STARTUP",
+            f"v{version} starting in HOST mode — entry: {entry.title!r} | "
+            f"filter: {len(include_domains)} domains, {len(include_devices)} devices, "
+            f"{len(include_entities)} entities",
         )
-        log(hass, "HOST", "CONFIG",
-            f"WebSocket command registered: {WS_CMD_GET_EXPOSED_ENTITIES}")
 
         await async_setup_log_rotation(hass)
         return True
