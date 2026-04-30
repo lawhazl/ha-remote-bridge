@@ -51,6 +51,7 @@ from .const import (
     CONF_APPROVED_REMOTES,
     CONF_ENTITY_PREFIX,
     CONF_ENTITY_FRIENDLY_NAME_PREFIX,
+    CONF_EXCLUDE_DEVICES,
     CONF_EXCLUDE_DOMAINS,
     CONF_EXCLUDE_ENTITIES,
     CONF_FILTER,
@@ -825,6 +826,16 @@ class RemoteConnection:
 
         async def got_exposed_entities(message: dict) -> None:
             """Process filtered entity snapshot returned by the host."""
+            # Check for HA-level error (schema validation failed, handler exception, etc.)
+            if not message.get("success", True):
+                err = message.get("error", {})
+                _LOGGER.error(
+                    "ha_bridge/get_exposed_entities failed on host: [%s] %s",
+                    err.get("code", "unknown"),
+                    err.get("message", "no detail"),
+                )
+                return
+
             result = message.get("result", {})
             status = result.get("status")
 
@@ -838,7 +849,8 @@ class RemoteConnection:
 
             if status != "ok":
                 _LOGGER.error(
-                    "Unexpected status from host get_exposed_entities: %s", status
+                    "Unexpected status from host get_exposed_entities: %r (full result: %s)",
+                    status, result,
                 )
                 return
 
