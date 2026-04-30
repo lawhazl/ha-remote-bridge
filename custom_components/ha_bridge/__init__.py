@@ -333,9 +333,16 @@ class RemoteConnection:
         return base + url
 
     def set_connection_state(self, state: str) -> None:
-        """Broadcast current connection state via dispatcher."""
+        """Broadcast current connection state via dispatcher.
+
+        Thread-safe: uses call_soon_threadsafe so this method can be called
+        from any context (event loop or executor thread) without triggering
+        the HA async_write_ha_state thread-safety check.
+        """
         signal = f"ha_bridge_{self._entry.unique_id}"
-        async_dispatcher_send(self._hass, signal, state)
+        self._hass.loop.call_soon_threadsafe(
+            async_dispatcher_send, self._hass, signal, state
+        )
 
     @callback
     def _get_url(self) -> str:
@@ -456,8 +463,8 @@ class RemoteConnection:
         return _id
 
     async def call(self, handler, message_type: str, **extra_args) -> None:
-        if self._connection is None:
-            _LOGGER.error("No remote websocket connection")
+        if self._connection is None or self._connection.closed:
+            _LOGGER.debug("Dropping call %r — connection not open", message_type)
             return
 
         _id = self._next_id()
@@ -467,7 +474,7 @@ class RemoteConnection:
                 {"id": _id, "type": message_type, **extra_args}
             )
         except aiohttp.client_exceptions.ClientError as err:
-            _LOGGER.error("remote websocket connection closed: %s", err)
+            _LOGGER.debug("remote websocket connection closed: %s", err)
             await self._disconnected()
 
     async def _disconnected(self) -> None:
@@ -601,13 +608,13 @@ class RemoteConnection:
             data = {"id": _id, "type": event.event_type, **event_data}
             _LOGGER.debug("forward event: %s", data)
 
-            if self._connection is None:
-                _LOGGER.error("There is no remote connection to send data to")
+            if self._connection is None or self._connection.closed:
+                _LOGGER.debug("Dropping forwarded event — connection not open")
                 return
             try:
                 await self._connection.send_json(data)
             except Exception as err:
-                _LOGGER.error("could not send data to remote connection: %s", err)
+                _LOGGER.debug("could not send data to remote connection: %s", err)
                 await self._disconnected()
 
         def state_changed(entity_id: str, state: str, attr: dict) -> None:

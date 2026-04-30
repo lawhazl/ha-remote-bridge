@@ -1,6 +1,7 @@
 """Sensor platform for connection status."""
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import CONF_HOST, CONF_PORT, CONF_VERIFY_SSL
+from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 
@@ -67,6 +68,7 @@ class ConnectionStatusSensor(SensorEntity):
         """Subscribe to connection state updates."""
         await super().async_added_to_hass()
 
+        @callback
         def _update_handler(state):
             self._native_value = state
             self.async_write_ha_state()
