@@ -569,18 +569,17 @@ class RemoteConnection:
                 asyncio.ensure_future(self._connection.close())
                 break
 
-    def _reconcile_orphans(self, new_entity_ids: set[str]) -> tuple[int, int]:
-        """Remove entity/device registry entries no longer in the exposed set.
+    def _reconcile_orphans(self) -> tuple[int, int]:
+        """Remove entity/device registry entries no longer in the active mirror set.
 
-        Runs synchronously on the event loop (all registry ops are @callback).
+        Must be called AFTER state_changed() has been applied for all snapshot
+        entities. At that point self._entities is the ground truth — it contains
+        every actual local entity_id that should exist. Any owned registry entry
+        whose entity_id is not in that set is an orphan from a previous sync.
+
+        Comparing directly against self._entities avoids any unique_id format
+        reconstruction and is robust to _2/_3 registry suffixes.
         Returns (removed_entities, removed_devices).
-
-        Logic:
-        - Compare all registry entries owned by this config entry against the
-          new exposed set (prefixed entity IDs, matching what we store).
-        - Entries not in the new set are removed from the entity registry.
-        - Devices that have no surviving owned entities are removed too, but
-          the hub device is never touched here.
         """
         entity_reg = er.async_get(self._hass)
         device_reg = dr.async_get(self._hass)
@@ -592,21 +591,13 @@ class RemoteConnection:
             e for e in er.async_entries_for_config_entry(entity_reg, self._entry.entry_id)
             if e.platform == DOMAIN
         ]
-        # Match by unique_id — NOT entity_id. The registry may have assigned
-        # a _2/_3 suffix (when the suggested object_id was already taken), so
-        # the stored entity_id diverges from self._prefixed_entity_id(eid).
-        # The unique_id is always canonical: "{entry.unique_id[:16]}_{prefixed_id}".
-        expected_unique_ids = {
-            f"{self._entry.unique_id[:16]}_{self._prefixed_entity_id(eid)}"
-            for eid in new_entity_ids
-        }
 
         removed_entities = 0
         surviving_device_ids: set[str] = set()
 
         for entry in owned_entries:
-            if entry.unique_id in expected_unique_ids:
-                # Survives — track its device so we can protect it below.
+            if entry.entity_id in self._entities:
+                # Active mirror — protect its device.
                 if entry.device_id:
                     surviving_device_ids.add(entry.device_id)
             else:
@@ -614,6 +605,8 @@ class RemoteConnection:
                     "[REMOTE] Orphan entity removed: %s (not in host's exposed list)",
                     entry.entity_id,
                 )
+                # Also clear the state if it somehow survived disconnect.
+                self._hass.states.async_remove(entry.entity_id)
                 entity_reg.async_remove(entry.entity_id)
                 removed_entities += 1
 
@@ -1035,18 +1028,6 @@ class RemoteConnection:
             # the state_changed() filter is active for subsequent live events.
             self._exposed_entity_ids = {e["entity_id"] for e in entities}
 
-            # Reconcile: remove registry entries no longer in the exposed set.
-            # Runs before any new device/entity entries are created so orphan
-            # detection is based on the previous sync's state, not this one.
-            removed_e, removed_d = self._reconcile_orphans(
-                {e["entity_id"] for e in entities}
-            )
-            log(
-                self._hass, "REMOTE", "RECONCILE",
-                f"Orphan reconciliation: {removed_e} entities removed, "
-                f"{removed_d} devices removed",
-            )
-
             # Build entity→device map (keyed by un-prefixed host entity_id).
             # Must happen before state_changed() so device linkage is ready.
             self._entity_host_device_map = {
@@ -1081,11 +1062,24 @@ class RemoteConnection:
                 f"Hub device present. Mirrored devices created/updated: {len(devices)}",
             )
 
-            # Apply initial states from snapshot
+            # Apply initial states from snapshot — this populates self._entities
+            # with every actual local entity_id that should currently exist.
             for entity_data in entities:
                 entity_id = entity_data["entity_id"]
                 attr = dict(entity_data.get("attributes", {}))
                 state_changed(entity_id, entity_data["state"], attr)
+
+            # Reconcile AFTER the full snapshot has been applied. self._entities
+            # is now the ground truth — any owned registry entry whose entity_id
+            # is not in that set is an orphan from a previous sync and is removed.
+            # Running post-snapshot avoids the unique_id reconstruction that was
+            # needed for pre-snapshot reconciliation and failed on format mismatches.
+            removed_e, removed_d = self._reconcile_orphans()
+            log(
+                self._hass, "REMOTE", "RECONCILE",
+                f"Orphan reconciliation: {removed_e} entities removed, "
+                f"{removed_d} devices removed",
+            )
 
             # Register service-call forwarding listener
             self._remove_listener = self._hass.bus.async_listen(
