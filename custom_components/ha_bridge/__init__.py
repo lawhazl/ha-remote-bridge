@@ -103,6 +103,75 @@ class RemoteHomeAssistantData:
 type RemoteHomeAssistantConfigEntry = ConfigEntry[RemoteHomeAssistantData]
 
 
+@callback
+def _build_entity_snapshot(hass: HomeAssistant, entry: ConfigEntry) -> dict:
+    """Build filtered entity+device snapshot from local HA state. Runs on event loop."""
+    include_domains = set(entry.options.get(CONF_INCLUDE_DOMAINS, []))
+    include_devices = set(entry.options.get(CONF_INCLUDE_DEVICES, []))
+    include_entities = set(entry.options.get(CONF_INCLUDE_ENTITIES, []))
+    exclude_domains = set(entry.options.get(CONF_EXCLUDE_DOMAINS, []))
+    exclude_devices = set(entry.options.get(CONF_EXCLUDE_DEVICES, []))
+    exclude_entities = set(entry.options.get(CONF_EXCLUDE_ENTITIES, []))
+
+    # Nothing included = nothing exposed
+    if not include_domains and not include_devices and not include_entities:
+        return {"entities": [], "devices": []}
+
+    entity_reg = er.async_get(hass)
+    device_reg = dr.async_get(hass)
+
+    entities = []
+    device_ids_needed: set[str] = set()
+
+    for state in hass.states.async_all():
+        entity_id = state.entity_id
+        domain = entity_id.split(".")[0]
+
+        entity_entry = entity_reg.async_get(entity_id)
+        device_id = entity_entry.device_id if entity_entry else None
+
+        # Inclusion: domain, specific entity, or device
+        included = (
+            domain in include_domains
+            or entity_id in include_entities
+            or (device_id and device_id in include_devices)
+        )
+        if not included:
+            continue
+
+        # Exclusion always wins
+        if (
+            domain in exclude_domains
+            or entity_id in exclude_entities
+            or (device_id and device_id in exclude_devices)
+        ):
+            continue
+
+        entities.append({
+            "entity_id": entity_id,
+            "state": state.state,
+            "attributes": dict(state.attributes),
+            "device_id": device_id,
+        })
+        if device_id:
+            device_ids_needed.add(device_id)
+
+    devices = []
+    for device_id in device_ids_needed:
+        device = device_reg.async_get(device_id)
+        if device:
+            devices.append({
+                "id": device_id,
+                "name": device.name_by_user or device.name,
+                "manufacturer": device.manufacturer,
+                "model": device.model,
+                "sw_version": device.sw_version,
+                "hw_version": device.hw_version,
+            })
+
+    return {"entities": entities, "devices": devices}
+
+
 @websocket_api.websocket_command({
     vol.Required("type"): WS_CMD_GET_EXPOSED_ENTITIES,
     vol.Required("remote_uuid"): str,
@@ -129,8 +198,14 @@ async def ws_get_exposed_entities(
         persistent_notification.async_dismiss(
             hass, f"ha_bridge_pending_{remote_uuid}"
         )
-        # Full entity snapshot returned in Stage 3 — stub for now
-        connection.send_result(msg["id"], {"status": "ok", "entities": [], "devices": []})
+
+        snapshot = _build_entity_snapshot(hass, approved_entry)
+        log(
+            hass, "HOST", "SNAPSHOT",
+            f"Sending snapshot to {remote_name!r}: "
+            f"{len(snapshot['entities'])} entities across {len(snapshot['devices'])} devices",
+        )
+        connection.send_result(msg["id"], {"status": "ok", **snapshot})
         return
 
     # Not approved — record as pending and notify the host user
@@ -309,6 +384,7 @@ class RemoteConnection:
         self._is_stopping = False
         self._entities: set[str] = set()
         self._all_entity_names: set[str] = set()
+        self._exposed_entity_ids: set[str] = set()  # IDs approved by host snapshot
         self._handlers: dict = {}
         self._remove_listener = None
         self.proxy_services = ProxyServices(hass, config_entry, self)
@@ -460,7 +536,7 @@ class RemoteConnection:
             event = asyncio.Event()
 
             def resp(message):
-                _LOGGER.debug("Got pong: %s", message)
+                _LOGGER.debug("Got pong id=%s", message.get("id"))
                 event.set()
 
             await self.call(resp, "ping")
@@ -516,6 +592,7 @@ class RemoteConnection:
         self._remove_listener = None
         self._entities = set()
         self._all_entity_names = set()
+        self._exposed_entity_ids = set()
         if not self._is_stopping:
             asyncio.ensure_future(self.async_connect())
 
@@ -639,7 +716,7 @@ class RemoteConnection:
 
             _id = self._next_id()
             data = {"id": _id, "type": event.event_type, **event_data}
-            _LOGGER.debug("forward event: %s", data)
+            _LOGGER.debug("forward event type=%s", event.event_type)
 
             if self._connection is None or self._connection.closed:
                 _LOGGER.debug("Dropping forwarded event — connection not open")
@@ -656,14 +733,11 @@ class RemoteConnection:
 
             self._all_entity_names.add(entity_id)
 
-            if entity_id in self._blacklist_e or domain in self._blacklist_d:
-                return
-
-            if (
-                (self._whitelist_e or self._whitelist_d)
-                and entity_id not in self._whitelist_e
-                and domain not in self._whitelist_d
-            ):
+            # Primary filter: only mirror entities the host has approved.
+            # When _exposed_entity_ids is populated (after snapshot), unknown
+            # entities are silently dropped. Before snapshot arrives it is empty
+            # and all entities pass (only used for got_exposed_entities initial load).
+            if self._exposed_entity_ids and entity_id not in self._exposed_entity_ids:
                 return
 
             for f in self._filter:
@@ -749,25 +823,64 @@ class RemoteConnection:
                     origin=EventOrigin.remote,
                 )
 
-        def got_states(message: dict) -> None:
-            """Process initial list of remote states."""
-            for entity in message["result"]:
-                entity_id = entity["entity_id"]
-                state = entity["state"]
-                attributes = entity["attributes"]
-                for attr, value in attributes.items():
-                    if attr == "friendly_name":
-                        attributes[attr] = self._prefixed_entity_friendly_name(value)
-                    if attr == "entity_picture":
-                        attributes[attr] = self._full_picture_url(value)
-                state_changed(entity_id, state, attributes)
+        async def got_exposed_entities(message: dict) -> None:
+            """Process filtered entity snapshot returned by the host."""
+            result = message.get("result", {})
+            status = result.get("status")
 
-        self._remove_listener = self._hass.bus.async_listen(
-            EVENT_CALL_SERVICE, forward_event
+            if status == "pending_approval":
+                log(
+                    self._hass, "REMOTE", "APPROVAL",
+                    "Host has not yet approved this remote — connection open but no entities mirrored. "
+                    "Approve via Settings → Integrations → Remote Bridge on the host.",
+                )
+                return
+
+            if status != "ok":
+                _LOGGER.error(
+                    "Unexpected status from host get_exposed_entities: %s", status
+                )
+                return
+
+            entities = result.get("entities", [])
+            devices = result.get("devices", [])
+
+            log(
+                self._hass, "REMOTE", "SNAPSHOT",
+                f"Snapshot received: {len(entities)} entities across {len(devices)} devices",
+            )
+
+            # Lock in the set of approved entity IDs before applying states so
+            # the state_changed() filter is active for subsequent live events.
+            self._exposed_entity_ids = {e["entity_id"] for e in entities}
+
+            # Apply initial states from snapshot
+            for entity_data in entities:
+                entity_id = entity_data["entity_id"]
+                attr = dict(entity_data.get("attributes", {}))
+                state_changed(entity_id, entity_data["state"], attr)
+
+            # Register service-call forwarding listener
+            self._remove_listener = self._hass.bus.async_listen(
+                EVENT_CALL_SERVICE, forward_event
+            )
+
+            # Subscribe to live state changes on the host
+            for event in self._subscribe_events:
+                await self.call(fire_event, "subscribe_events", event_type=event)
+
+            await self.proxy_services.load()
+
+            log(
+                self._hass, "REMOTE", "READY",
+                f"Mirroring {len(self._exposed_entity_ids)} entities across {len(devices)} devices",
+            )
+
+        # Request filtered snapshot from host
+        log(self._hass, "REMOTE", "CONNECT", "Requesting entity snapshot from host...")
+        await self.call(
+            got_exposed_entities,
+            WS_CMD_GET_EXPOSED_ENTITIES,
+            remote_uuid=self._entry.unique_id or "",
+            remote_name=self._hass.config.location_name,
         )
-
-        for event in self._subscribe_events:
-            await self.call(fire_event, "subscribe_events", event_type=event)
-
-        await self.call(got_states, "get_states")
-        await self.proxy_services.load()
