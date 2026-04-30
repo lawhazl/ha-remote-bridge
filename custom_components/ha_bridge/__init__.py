@@ -706,16 +706,7 @@ class RemoteConnection:
                 break
 
             msg_type = message.get("type", "?")
-            if msg_type == "event":
-                evt = message.get("event", {})
-                evt_type = evt.get("event_type", "?")
-                entity_id = evt.get("data", {}).get("entity_id", "")
-                _LOGGER.debug(
-                    "received: type=event event_type=%s%s",
-                    evt_type,
-                    f" entity={entity_id}" if entity_id else "",
-                )
-            else:
+            if msg_type != "event":
                 _LOGGER.debug("received: type=%s id=%s", msg_type, message.get("id", "?"))
 
             if message["type"] == api.TYPE_AUTH_OK:
@@ -909,6 +900,13 @@ class RemoteConnection:
             if message["event"]["event_type"] == "state_changed":
                 data = message["event"]["data"]
                 entity_id = data["entity_id"]
+
+                # Drop events for entities not in the approved set — the host sends
+                # ALL state_changed events (no server-side filtering at subscription
+                # level), so we discard silently here to avoid noisy debug logs.
+                if self._exposed_entity_ids and entity_id not in self._exposed_entity_ids:
+                    return
+
                 if not data["new_state"]:
                     entity_id = self._prefixed_entity_id(entity_id)
                     with suppress(ValueError, AttributeError, KeyError):
@@ -918,6 +916,9 @@ class RemoteConnection:
                     self._hass.states.async_remove(entity_id)
                     return
 
+                _LOGGER.debug(
+                    "received: state_changed entity=%s", entity_id
+                )
                 state = data["new_state"]["state"]
                 attr = data["new_state"]["attributes"]
                 state_changed(entity_id, state, attr)
