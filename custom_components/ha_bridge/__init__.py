@@ -402,6 +402,10 @@ class RemoteConnection:
         self._device_id_map: dict[str, str] = {}
         # host entity_id → host device_id (populated from snapshot, keyed by un-prefixed id)
         self._entity_host_device_map: dict[str, str] = {}
+        # host entity_id (un-prefixed) → actual local entity_id from registry.
+        # The registry may assign a _2/_3 suffix when the suggested object_id is
+        # already taken. We must use this actual ID for state writes and removals.
+        self._host_to_local_entity_id: dict[str, str] = {}
         self._handlers: dict = {}
         self._remove_listener = None
         self.proxy_services = ProxyServices(hass, config_entry, self)
@@ -588,17 +592,20 @@ class RemoteConnection:
             e for e in er.async_entries_for_config_entry(entity_reg, self._entry.entry_id)
             if e.platform == DOMAIN
         ]
-        # Build the set of entity IDs we expect after this connect — same
-        # prefix logic applied in state_changed().
-        expected_entity_ids = {
-            self._prefixed_entity_id(eid) for eid in new_entity_ids
+        # Match by unique_id — NOT entity_id. The registry may have assigned
+        # a _2/_3 suffix (when the suggested object_id was already taken), so
+        # the stored entity_id diverges from self._prefixed_entity_id(eid).
+        # The unique_id is always canonical: "{entry.unique_id[:16]}_{prefixed_id}".
+        expected_unique_ids = {
+            f"{self._entry.unique_id[:16]}_{self._prefixed_entity_id(eid)}"
+            for eid in new_entity_ids
         }
 
         removed_entities = 0
         surviving_device_ids: set[str] = set()
 
         for entry in owned_entries:
-            if entry.entity_id in expected_entity_ids:
+            if entry.unique_id in expected_unique_ids:
                 # Survives — track its device so we can protect it below.
                 if entry.device_id:
                     surviving_device_ids.add(entry.device_id)
@@ -678,6 +685,7 @@ class RemoteConnection:
         self._exposed_entity_ids = set()
         self._device_id_map = {}
         self._entity_host_device_map = {}
+        self._host_to_local_entity_id = {}
         if not self._is_stopping:
             asyncio.ensure_future(self.async_connect())
 
@@ -789,13 +797,24 @@ class RemoteConnection:
             if not matched_ids:
                 return
 
-            # Strip prefix before forwarding — host uses un-prefixed IDs
-            if self._entity_prefix:
-                def _remove_prefix(entity_id):
-                    domain, object_id = split_entity_id(entity_id)
+            # Convert actual local entity_ids back to host entity_ids.
+            # A simple prefix-strip is unreliable when the registry assigned a
+            # _2/_3 suffix — reverse-lookup via _host_to_local_entity_id is
+            # the only reliable way to recover the original host entity_id.
+            local_to_host = {v: k for k, v in self._host_to_local_entity_id.items()}
+            host_matched_ids: set[str] = set()
+            for eid in matched_ids:
+                host_eid = local_to_host.get(eid)
+                if host_eid:
+                    host_matched_ids.add(host_eid)
+                elif self._entity_prefix:
+                    # Fallback for entities not yet in the reverse map
+                    domain, object_id = split_entity_id(eid)
                     object_id = object_id.replace(self._entity_prefix.lower(), "", 1)
-                    return domain + "." + object_id
-                matched_ids = {_remove_prefix(eid) for eid in matched_ids}
+                    host_matched_ids.add(domain + "." + object_id)
+                else:
+                    host_matched_ids.add(eid)
+            matched_ids = host_matched_ids
 
             event_data = copy.deepcopy(event_data)
             event_data.pop("service_call_id", None)
@@ -862,18 +881,18 @@ class RemoteConnection:
 
             # Resolve device linkage before applying prefix — the map is keyed by
             # the un-prefixed host entity_id that comes in from the snapshot / event.
+            host_entity_id = entity_id  # un-prefixed, used as map key below
             host_device_id = self._entity_host_device_map.get(entity_id)
             local_device_id = self._device_id_map.get(host_device_id) if host_device_id else None
 
-            entity_id = self._prefixed_entity_id(entity_id)
-
-            domain, object_id = split_entity_id(entity_id)
-            attr["unique_id"] = f"{self._entry.unique_id[:16]}_{entity_id}"
+            prefixed_entity_id = self._prefixed_entity_id(entity_id)
+            domain, object_id = split_entity_id(prefixed_entity_id)
+            unique_id = f"{self._entry.unique_id[:16]}_{prefixed_entity_id}"
             entity_registry = er.async_get(self._hass)
             reg_entry = entity_registry.async_get_or_create(
                 domain=domain,
                 platform=DOMAIN,
-                unique_id=attr["unique_id"],
+                unique_id=unique_id,
                 suggested_object_id=object_id,
                 device_id=local_device_id,
             )
@@ -884,8 +903,15 @@ class RemoteConnection:
                     reg_entry.entity_id, device_id=local_device_id
                 )
 
+            # Use the entity_id the registry actually assigned. When the suggested
+            # object_id conflicts with an existing entry, HA appends _2/_3 etc. We
+            # must write state to this actual ID — not the suggested one — so the
+            # registry entry and the state machine stay in sync (no duplicate entities).
+            actual_entity_id = reg_entry.entity_id
+            self._host_to_local_entity_id[host_entity_id] = actual_entity_id
+
             if DATA_CUSTOMIZE in self._hass.data:
-                attr.update(self._hass.data[DATA_CUSTOMIZE].get(entity_id))
+                attr.update(self._hass.data[DATA_CUSTOMIZE].get(actual_entity_id))
 
             for attrId, value in attr.items():
                 if attrId == "friendly_name":
@@ -893,8 +919,8 @@ class RemoteConnection:
                 if attrId == "entity_picture":
                     attr[attrId] = self._full_picture_url(value)
 
-            self._entities.add(entity_id)
-            self._hass.states.async_set(entity_id, state, attr)
+            self._entities.add(actual_entity_id)
+            self._hass.states.async_set(actual_entity_id, state, attr)
 
         def fire_event(message: dict) -> None:
             """Publish remote event on local instance."""
@@ -920,12 +946,17 @@ class RemoteConnection:
                     return
 
                 if not data["new_state"]:
-                    entity_id = self._prefixed_entity_id(entity_id)
+                    # The registry may have assigned a _2/_3 suffix — look up
+                    # the actual local entity_id we stored when it was created.
+                    actual_entity_id = self._host_to_local_entity_id.get(
+                        entity_id, self._prefixed_entity_id(entity_id)
+                    )
                     with suppress(ValueError, AttributeError, KeyError):
-                        self._entities.remove(entity_id)
+                        self._entities.remove(actual_entity_id)
                     with suppress(ValueError, AttributeError, KeyError):
-                        self._all_entity_names.remove(entity_id)
-                    self._hass.states.async_remove(entity_id)
+                        self._all_entity_names.remove(actual_entity_id)
+                    self._hass.states.async_remove(actual_entity_id)
+                    self._host_to_local_entity_id.pop(entity_id, None)
                     return
 
                 _LOGGER.debug(
