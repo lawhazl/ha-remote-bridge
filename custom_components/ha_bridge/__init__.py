@@ -569,9 +569,13 @@ class RemoteConnection:
         entity_reg = er.async_get(self._hass)
         device_reg = dr.async_get(self._hass)
 
-        owned_entries = er.async_entries_for_config_entry(
-            entity_reg, self._entry.entry_id
-        )
+        # Only consider mirrored entities — platform="ha_bridge".
+        # er.async_entries_for_config_entry also returns the ConnectionStatusSensor
+        # (platform="sensor") which must never be orphan-removed.
+        owned_entries = [
+            e for e in er.async_entries_for_config_entry(entity_reg, self._entry.entry_id)
+            if e.platform == DOMAIN
+        ]
         # Build the set of entity IDs we expect after this connect — same
         # prefix logic applied in state_changed().
         expected_entity_ids = {
@@ -863,13 +867,19 @@ class RemoteConnection:
             domain, object_id = split_entity_id(entity_id)
             attr["unique_id"] = f"{self._entry.unique_id[:16]}_{entity_id}"
             entity_registry = er.async_get(self._hass)
-            entity_registry.async_get_or_create(
+            reg_entry = entity_registry.async_get_or_create(
                 domain=domain,
-                platform="ha_bridge",
+                platform=DOMAIN,
                 unique_id=attr["unique_id"],
                 suggested_object_id=object_id,
                 device_id=local_device_id,
             )
+            # async_get_or_create may not update device_id on an existing entry
+            # in all HA versions — force it so reconciliation can see the linkage.
+            if local_device_id and reg_entry.device_id != local_device_id:
+                entity_registry.async_update_entity(
+                    reg_entry.entity_id, device_id=local_device_id
+                )
 
             if DATA_CUSTOMIZE in self._hass.data:
                 attr.update(self._hass.data[DATA_CUSTOMIZE].get(entity_id))
