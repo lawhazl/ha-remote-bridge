@@ -1,8 +1,8 @@
 """Integration log file manager with 7-day rotation."""
 from __future__ import annotations
 import asyncio
+import concurrent.futures
 import logging
-import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -11,7 +11,12 @@ from homeassistant.core import HomeAssistant
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
-_LOG_LOCK = threading.Lock()  # Serialise file writes across executor threads
+
+# Single-worker executor: guarantees log writes are processed in submission
+# order (FIFO queue, one thread) and never block the event loop.
+_LOG_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=1, thread_name_prefix="ha_bridge_log"
+)
 
 _LOG_FORMAT = "[{timestamp}] [{mode}] [{stage}] {message}"
 
@@ -21,14 +26,14 @@ def _log_dir(hass: HomeAssistant) -> Path:
 
 
 def _write_log_sync(log_dir: Path, mode: str, stage: str, message: str) -> None:
-    """Blocking file write — must only be called from an executor thread."""
+    """Blocking file write — runs on the dedicated log executor thread."""
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
         today = datetime.now().strftime("%Y-%m-%d")
         log_file = log_dir / f"{DOMAIN}_{today}.log"
         timestamp = datetime.now().isoformat(timespec="seconds")
         line = _LOG_FORMAT.format(timestamp=timestamp, mode=mode, stage=stage, message=message)
-        with _LOG_LOCK, open(log_file, "a", encoding="utf-8") as f:
+        with open(log_file, "a", encoding="utf-8") as f:
             f.write(line + "\n")
     except Exception as err:
         _LOGGER.error("Failed to write to integration log: %s", err)
@@ -37,10 +42,11 @@ def _write_log_sync(log_dir: Path, mode: str, stage: str, message: str) -> None:
 def log(hass: HomeAssistant, mode: str, stage: str, message: str) -> None:
     """Write a structured log entry to the daily log file and HA debug log.
 
-    File I/O is offloaded to the executor so the event loop is never blocked.
+    Submits to a single-worker ThreadPoolExecutor so writes are always in
+    call order and the event loop is never blocked.
     """
     _LOGGER.debug("[%s] [%s] %s", mode, stage, message)
-    hass.async_add_executor_job(_write_log_sync, _log_dir(hass), mode, stage, message)
+    _LOG_EXECUTOR.submit(_write_log_sync, _log_dir(hass), mode, stage, message)
 
 
 def purge_old_logs(hass: HomeAssistant) -> None:
