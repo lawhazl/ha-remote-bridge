@@ -36,7 +36,7 @@ from homeassistant.const import (
     EVENT_STATE_CHANGED,
 )
 from homeassistant.components import persistent_notification
-from homeassistant.core import Context, EventOrigin, HomeAssistant, callback, split_entity_id
+from homeassistant.core import Context, CoreState, EventOrigin, HomeAssistant, callback, split_entity_id
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -185,6 +185,18 @@ async def ws_get_exposed_entities(
     """Return filtered entity snapshot for an approved remote, or signal pending approval."""
     remote_uuid = msg["remote_uuid"]
     remote_name = msg.get("remote_name", "Unknown")
+
+    # If HA hasn't finished starting yet, the device/entity registries are not
+    # fully populated. Tell the remote to retry rather than returning an empty
+    # snapshot that would look like "no entities exposed".
+    if hass.state not in (CoreState.running, CoreState.stopping):
+        log(
+            hass, "HOST", "SNAPSHOT",
+            f"Snapshot request from {remote_name!r} rejected — HA not fully started yet "
+            f"(state={hass.state.value}). Remote will retry.",
+        )
+        connection.send_result(msg["id"], {"status": "not_ready"})
+        return
 
     # Check whether any host entry has approved this remote
     approved_entry = None
@@ -955,6 +967,20 @@ class RemoteConnection:
                     self._hass, "REMOTE", "APPROVAL",
                     "Host has not yet approved this remote — connection open but no entities mirrored. "
                     "Approve via Settings → Integrations → Remote Bridge on the host.",
+                )
+                return
+
+            if status == "not_ready":
+                log(
+                    self._hass, "REMOTE", "SNAPSHOT",
+                    "Host HA is still starting up — retrying snapshot in 15 s.",
+                )
+                await asyncio.sleep(15)
+                await self.call(
+                    got_exposed_entities,
+                    WS_CMD_GET_EXPOSED_ENTITIES,
+                    remote_uuid=self._entry.unique_id or "",
+                    remote_name=self._hass.config.location_name,
                 )
                 return
 
