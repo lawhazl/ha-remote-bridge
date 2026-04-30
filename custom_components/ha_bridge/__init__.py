@@ -386,6 +386,10 @@ class RemoteConnection:
         self._entities: set[str] = set()
         self._all_entity_names: set[str] = set()
         self._exposed_entity_ids: set[str] = set()  # IDs approved by host snapshot
+        # host device_id → local device registry entry id (populated from snapshot)
+        self._device_id_map: dict[str, str] = {}
+        # host entity_id → host device_id (populated from snapshot, keyed by un-prefixed id)
+        self._entity_host_device_map: dict[str, str] = {}
         self._handlers: dict = {}
         self._remove_listener = None
         self.proxy_services = ProxyServices(hass, config_entry, self)
@@ -594,6 +598,8 @@ class RemoteConnection:
         self._entities = set()
         self._all_entity_names = set()
         self._exposed_entity_ids = set()
+        self._device_id_map = {}
+        self._entity_host_device_map = {}
         if not self._is_stopping:
             asyncio.ensure_future(self.async_connect())
 
@@ -765,6 +771,11 @@ class RemoteConnection:
                 except ValueError:
                     pass
 
+            # Resolve device linkage before applying prefix — the map is keyed by
+            # the un-prefixed host entity_id that comes in from the snapshot / event.
+            host_device_id = self._entity_host_device_map.get(entity_id)
+            local_device_id = self._device_id_map.get(host_device_id) if host_device_id else None
+
             entity_id = self._prefixed_entity_id(entity_id)
 
             domain, object_id = split_entity_id(entity_id)
@@ -775,6 +786,7 @@ class RemoteConnection:
                 platform="ha_bridge",
                 unique_id=attr["unique_id"],
                 suggested_object_id=object_id,
+                device_id=local_device_id,
             )
 
             if DATA_CUSTOMIZE in self._hass.data:
@@ -865,6 +877,40 @@ class RemoteConnection:
             # Lock in the set of approved entity IDs before applying states so
             # the state_changed() filter is active for subsequent live events.
             self._exposed_entity_ids = {e["entity_id"] for e in entities}
+
+            # Build entity→device map (keyed by un-prefixed host entity_id).
+            # Must happen before state_changed() so device linkage is ready.
+            self._entity_host_device_map = {
+                e["entity_id"]: e["device_id"]
+                for e in entities
+                if e.get("device_id")
+            }
+
+            # Create mirrored device registry entries.
+            # Hub device was already created in async_connect — HA requires it to
+            # exist before any via_device references are added.
+            device_reg = dr.async_get(self._hass)
+            hub_identifier = (DOMAIN, f"remote_{self._entry.unique_id}")
+            self._device_id_map = {}
+
+            for device_data in devices:
+                host_device_id = device_data["id"]
+                local_device = device_reg.async_get_or_create(
+                    config_entry_id=self._entry.entry_id,
+                    identifiers={(DOMAIN, f"mirrored_{self._entry.entry_id}_{host_device_id}")},
+                    name=device_data.get("name"),
+                    manufacturer=device_data.get("manufacturer"),
+                    model=device_data.get("model"),
+                    sw_version=device_data.get("sw_version"),
+                    hw_version=device_data.get("hw_version"),
+                    via_device=hub_identifier,
+                )
+                self._device_id_map[host_device_id] = local_device.id
+
+            log(
+                self._hass, "REMOTE", "DEVICES",
+                f"Hub device present. Mirrored devices created/updated: {len(devices)}",
+            )
 
             # Apply initial states from snapshot
             for entity_data in entities:
