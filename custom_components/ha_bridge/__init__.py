@@ -894,6 +894,7 @@ class RemoteConnection:
                 platform=DOMAIN,
                 unique_id=unique_id,
                 suggested_object_id=object_id,
+                config_entry_id=self._entry.entry_id,
                 device_id=local_device_id,
             )
             # async_get_or_create may not update device_id on an existing entry
