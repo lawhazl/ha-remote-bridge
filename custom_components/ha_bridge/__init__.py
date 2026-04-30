@@ -71,7 +71,7 @@ from .const import (
     ROLE_REMOTE,
     WS_CMD_GET_EXPOSED_ENTITIES,
 )
-from .logger import log, async_setup_log_rotation
+from .logger import log, async_setup_log_rotation, install_file_handler
 from .proxy_services import ProxyServices
 from .rest_api import UnsupportedVersion, async_get_discovery_info
 from .views import DiscoveryInfoView, HostConfigsView, get_integration_version
@@ -163,8 +163,13 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         "_view_registered": False,
         "_host_configs_view_registered": False,
         "_ws_registered": False,
+        "_log_rotation_started": False,
         "pending_remotes": {},  # {uuid: {uuid, name, first_seen}} — cleared on HA restart
     })
+
+    # Attach file handler once so debug logs go to the daily log file when
+    # custom_components.ha_bridge debug logging is enabled in HA.
+    install_file_handler(hass.config.config_dir)
 
     async def _handle_dump_diagnostics(service) -> None:
         _LOGGER.info("[%s] dump_diagnostics called — full implementation in Stage 8", DOMAIN)
