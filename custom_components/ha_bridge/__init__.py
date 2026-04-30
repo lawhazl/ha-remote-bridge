@@ -553,6 +553,68 @@ class RemoteConnection:
                 asyncio.ensure_future(self._connection.close())
                 break
 
+    def _reconcile_orphans(self, new_entity_ids: set[str]) -> tuple[int, int]:
+        """Remove entity/device registry entries no longer in the exposed set.
+
+        Runs synchronously on the event loop (all registry ops are @callback).
+        Returns (removed_entities, removed_devices).
+
+        Logic:
+        - Compare all registry entries owned by this config entry against the
+          new exposed set (prefixed entity IDs, matching what we store).
+        - Entries not in the new set are removed from the entity registry.
+        - Devices that have no surviving owned entities are removed too, but
+          the hub device is never touched here.
+        """
+        entity_reg = er.async_get(self._hass)
+        device_reg = dr.async_get(self._hass)
+
+        owned_entries = er.async_entries_for_config_entry(
+            entity_reg, self._entry.entry_id
+        )
+        # Build the set of entity IDs we expect after this connect — same
+        # prefix logic applied in state_changed().
+        expected_entity_ids = {
+            self._prefixed_entity_id(eid) for eid in new_entity_ids
+        }
+
+        removed_entities = 0
+        surviving_device_ids: set[str] = set()
+
+        for entry in owned_entries:
+            if entry.entity_id in expected_entity_ids:
+                # Survives — track its device so we can protect it below.
+                if entry.device_id:
+                    surviving_device_ids.add(entry.device_id)
+            else:
+                _LOGGER.info(
+                    "[REMOTE] Orphan entity removed: %s (not in host's exposed list)",
+                    entry.entity_id,
+                )
+                entity_reg.async_remove(entry.entity_id)
+                removed_entities += 1
+
+        # Remove devices whose entities were all just removed.
+        # The hub device (identified by our own identifier) is never touched.
+        hub_identifier = (DOMAIN, f"remote_{self._entry.unique_id}")
+        owned_devices = dr.async_entries_for_config_entry(
+            device_reg, self._entry.entry_id
+        )
+        removed_devices = 0
+
+        for device in owned_devices:
+            if hub_identifier in device.identifiers:
+                continue  # never remove the hub
+            if device.id not in surviving_device_ids:
+                _LOGGER.info(
+                    "[REMOTE] Orphan device removed: %s (no remaining owned entities)",
+                    device.name_by_user or device.name or device.id,
+                )
+                device_reg.async_remove_device(device.id)
+                removed_devices += 1
+
+        return removed_entities, removed_devices
+
     async def async_stop(self) -> None:
         """Close connection."""
         self._is_stopping = True
@@ -877,6 +939,18 @@ class RemoteConnection:
             # Lock in the set of approved entity IDs before applying states so
             # the state_changed() filter is active for subsequent live events.
             self._exposed_entity_ids = {e["entity_id"] for e in entities}
+
+            # Reconcile: remove registry entries no longer in the exposed set.
+            # Runs before any new device/entity entries are created so orphan
+            # detection is based on the previous sync's state, not this one.
+            removed_e, removed_d = self._reconcile_orphans(
+                {e["entity_id"] for e in entities}
+            )
+            log(
+                self._hass, "REMOTE", "RECONCILE",
+                f"Orphan reconciliation: {removed_e} entities removed, "
+                f"{removed_d} devices removed",
+            )
 
             # Build entity→device map (keyed by un-prefixed host entity_id).
             # Must happen before state_changed() so device linkage is ready.
