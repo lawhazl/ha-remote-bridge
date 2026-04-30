@@ -18,11 +18,9 @@ def _log_dir(hass: HomeAssistant) -> Path:
     return Path(hass.config.config_dir) / "custom_components" / DOMAIN / "logs"
 
 
-def log(hass: HomeAssistant, mode: str, stage: str, message: str) -> None:
-    """Write a structured log entry to the daily log file and HA debug log."""
-    _LOGGER.debug("[%s] [%s] %s", mode, stage, message)
+def _write_log_sync(log_dir: Path, mode: str, stage: str, message: str) -> None:
+    """Blocking file write — must only be called from an executor thread."""
     try:
-        log_dir = _log_dir(hass)
         log_dir.mkdir(parents=True, exist_ok=True)
         today = datetime.now().strftime("%Y-%m-%d")
         log_file = log_dir / f"{DOMAIN}_{today}.log"
@@ -32,6 +30,15 @@ def log(hass: HomeAssistant, mode: str, stage: str, message: str) -> None:
             f.write(line + "\n")
     except Exception as err:
         _LOGGER.error("Failed to write to integration log: %s", err)
+
+
+def log(hass: HomeAssistant, mode: str, stage: str, message: str) -> None:
+    """Write a structured log entry to the daily log file and HA debug log.
+
+    File I/O is offloaded to the executor so the event loop is never blocked.
+    """
+    _LOGGER.debug("[%s] [%s] %s", mode, stage, message)
+    hass.async_add_executor_job(_write_log_sync, _log_dir(hass), mode, stage, message)
 
 
 def purge_old_logs(hass: HomeAssistant) -> None:
