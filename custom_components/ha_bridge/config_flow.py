@@ -285,23 +285,40 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_zeroconf(self, discovery_info):
         """Handle instance discovered via zeroconf — leads into remote mode flow."""
         properties = discovery_info.properties
+        # Use the actual IP that mDNS resolved to — always present and routable,
+        # unlike internal_url/base_url which may use hostnames that don't resolve
+        # cross-network.
+        host = discovery_info.host
         port = discovery_info.port
-        uuid = properties["uuid"]
+        uuid = properties.get("uuid")
 
+        if not uuid:
+            _LOGGER.debug("Zeroconf discovery: no uuid in properties, ignoring")
+            return self.async_abort(reason="not_ha_bridge_host")
+
+        # Abort if this is our own instance broadcasting
         if await async_get(self.hass) == uuid:
             return self.async_abort(reason="already_configured")
 
         await self.async_set_unique_id(uuid)
         self._abort_if_unique_id_configured()
 
+        # Determine protocol from the advertised URL if available; default to http
         url = properties.get("internal_url") or properties.get("base_url")
-        parsed = urlparse(url)
-        host = parsed.hostname
-        secure = parsed.scheme == "https"
+        secure = urlparse(url).scheme == "https" if url else False
 
         try:
             await async_probe_host(self.hass, host, port, secure, False)
-        except (EndpointMissing, CannotConnect, ApiProblem):
+        except EndpointMissing:
+            _LOGGER.debug(
+                "Zeroconf: %s:%s has no ha_bridge discovery endpoint — not a bridge host",
+                host, port,
+            )
+            return self.async_abort(reason="not_ha_bridge_host")
+        except (CannotConnect, ApiProblem) as err:
+            _LOGGER.debug(
+                "Zeroconf: probe of %s:%s failed (%s) — skipping", host, port, err
+            )
             return self.async_abort(reason="not_ha_bridge_host")
 
         self.prefill = {
@@ -311,8 +328,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_MAX_MSG_SIZE: DEFAULT_MAX_MSG_SIZE,
         }
 
+        location = properties.get("location_name", host)
         self.context["identifier"] = self.unique_id
-        self.context["title_placeholders"] = {"name": properties["location_name"]}
+        self.context["title_placeholders"] = {"name": location}
         return await self.async_step_connection_details()
 
 

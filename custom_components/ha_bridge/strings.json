@@ -27,6 +27,7 @@
       },
       "connection_details": {
         "title": "Connection details",
+        "description": "Enter the address and access token for the host Home Assistant instance.\n\nOnce connected, go to the **host** Remote Bridge settings and approve this remote inside the filter configuration you want it to use.",
         "data": {
           "name": "Configuration name",
           "host": "Host",
