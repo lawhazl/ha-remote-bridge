@@ -199,7 +199,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             f"{len(include_entities)} entities",
         )
 
-        await async_setup_log_rotation(hass)
+        if not hass.data[DOMAIN].get("_log_rotation_started"):
+            hass.data[DOMAIN]["_log_rotation_started"] = True
+            await async_setup_log_rotation(hass)
         return True
 
     if role == ROLE_REMOTE:

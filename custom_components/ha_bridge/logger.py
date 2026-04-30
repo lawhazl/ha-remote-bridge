@@ -22,7 +22,9 @@ _LOG_FORMAT = "[{timestamp}] [{mode}] [{stage}] {message}"
 
 
 def _log_dir(hass: HomeAssistant) -> Path:
-    return Path(hass.config.config_dir) / "custom_components" / DOMAIN / "logs"
+    # Store logs under /config/ha_bridge/logs/ — outside custom_components so
+    # HACS updates never wipe them.
+    return Path(hass.config.config_dir) / DOMAIN / "logs"
 
 
 def _write_log_sync(log_dir: Path, mode: str, stage: str, message: str) -> None:
