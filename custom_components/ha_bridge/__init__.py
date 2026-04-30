@@ -358,22 +358,32 @@ class RemoteConnection:
         async def _async_stop_handler(event):
             await self.async_stop()
 
+        host = self._entry.data[CONF_HOST]
+        port = self._entry.data[CONF_PORT]
+
         async def _async_instance_get_info():
             try:
                 return await async_get_discovery_info(
-                    self._hass,
-                    self._entry.data[CONF_HOST],
-                    self._entry.data[CONF_PORT],
-                    self._secure,
-                    self._access_token,
-                    self._verify_ssl,
+                    self._hass, host, port, self._secure,
+                    self._access_token, self._verify_ssl,
                 )
-            except OSError:
-                _LOGGER.exception("failed to connect")
+            except OSError as err:
+                # Connection refused / network unreachable — expected during
+                # reconnect loops. Log as WARNING (no traceback) to avoid spam.
+                _LOGGER.warning(
+                    "Cannot reach host at %s:%s — %s. Will retry in 10 s.",
+                    host, port, err,
+                )
             except UnsupportedVersion:
-                _LOGGER.error("Unsupported version, at least 0.111 is required.")
-            except Exception:
-                _LOGGER.exception("failed to fetch instance info")
+                _LOGGER.error(
+                    "Host at %s:%s requires Home Assistant 0.111 or newer.",
+                    host, port,
+                )
+            except Exception as err:
+                _LOGGER.warning(
+                    "Unexpected error fetching info from %s:%s — %s. Will retry in 10 s.",
+                    host, port, err,
+                )
             return None
 
         @callback
