@@ -27,15 +27,21 @@
       },
       "connection_details": {
         "title": "Connection details",
-        "description": "Enter the address and access token for the host Home Assistant instance.\n\nOnce connected, go to the **host** Remote Bridge settings and approve this remote inside the filter configuration you want it to use.",
         "data": {
-          "name": "Configuration name",
           "host": "Host",
           "port": "Port",
           "secure": "Secure (HTTPS/WSS)",
           "verify_ssl": "Verify SSL certificate",
           "access_token": "Long-lived access token",
           "max_message_size": "Maximum WebSocket message size (bytes)"
+        }
+      },
+      "select_host_config": {
+        "title": "Select host configuration",
+        "description": "Found {count} host configuration(s) on {host}. Select which one this remote should link to.",
+        "data": {
+          "name": "Configuration name",
+          "host_entry_id": "Host configuration"
         }
       }
     },
@@ -51,6 +57,7 @@
     "abort": {
       "already_configured": "Already configured",
       "import_failed": "Import failed",
+      "no_host_configs": "No host configurations were found on this instance. Make sure Remote Bridge is installed and set up in Host mode first.",
       "not_ha_bridge_host": "This Home Assistant instance does not have Remote Bridge installed in host mode."
     }
   },

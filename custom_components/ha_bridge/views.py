@@ -8,6 +8,18 @@ from homeassistant.components.http import HomeAssistantView
 from homeassistant.helpers.system_info import async_get_system_info
 from homeassistant.helpers.instance_id import async_get as async_get_instance_id
 
+from .const import (
+    CONF_EXCLUDE_DEVICES,
+    CONF_EXCLUDE_DOMAINS,
+    CONF_EXCLUDE_ENTITIES,
+    CONF_INCLUDE_DEVICES,
+    CONF_INCLUDE_DOMAINS,
+    CONF_INCLUDE_ENTITIES,
+    CONF_ROLE,
+    DOMAIN,
+    ROLE_HOST,
+)
+
 ATTR_INSTALLATION_TYPE = "installation_type"
 
 
@@ -50,3 +62,33 @@ class DiscoveryInfoView(HomeAssistantView):
                 "integration_version": get_integration_version(),
             }
         )
+
+
+class HostConfigsView(HomeAssistantView):
+    """Authenticated endpoint that lists host-mode config entries."""
+
+    url = "/api/ha_bridge/host_configs"
+    name = "api:ha_bridge:host_configs"
+    requires_auth = True
+
+    async def get(self, request):
+        """Return a list of host-mode config entries with their filter summaries."""
+        hass = request.app["hass"]
+        result = []
+        for entry in hass.config_entries.async_entries(DOMAIN):
+            if entry.data.get(CONF_ROLE) != ROLE_HOST:
+                continue
+            opts = entry.options
+            result.append(
+                {
+                    "entry_id": entry.entry_id,
+                    "title": entry.title,
+                    "include_domains": opts.get(CONF_INCLUDE_DOMAINS, []),
+                    "include_devices_count": len(opts.get(CONF_INCLUDE_DEVICES, [])),
+                    "include_entities_count": len(opts.get(CONF_INCLUDE_ENTITIES, [])),
+                    "exclude_domains": opts.get(CONF_EXCLUDE_DOMAINS, []),
+                    "exclude_devices_count": len(opts.get(CONF_EXCLUDE_DEVICES, [])),
+                    "exclude_entities_count": len(opts.get(CONF_EXCLUDE_ENTITIES, [])),
+                }
+            )
+        return self.json(result)

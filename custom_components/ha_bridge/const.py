@@ -29,6 +29,8 @@ STATE_PENDING_APPROVAL = "pending_approval"
 
 CONF_APPROVED_REMOTES = "approved_remotes"
 
+CONF_HOST_ENTRY_ID = "host_entry_id"
+
 DOMAIN = "ha_bridge"
 
 # replaces 'from homeassistant.core import SERVICE_CALL_LIMIT'

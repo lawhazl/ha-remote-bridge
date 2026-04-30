@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(unzip -o remote_homeassistant-4.6.zip -d source)",
+      "Bash(python3 -c ' *)",
+      "WebFetch(domain:developers.home-assistant.io)",
+      "Bash(git -C /Users/lukewatson/Claude/Code/ha-remote-bridge status)",
+      "Bash(gh auth *)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git restore *)"
+    ]
+  }
+}

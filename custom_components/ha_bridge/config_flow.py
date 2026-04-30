@@ -34,6 +34,7 @@ from .const import (
     CONF_EXCLUDE_DEVICES,
     CONF_EXCLUDE_DOMAINS,
     CONF_EXCLUDE_ENTITIES,
+    CONF_HOST_ENTRY_ID,
     CONF_INCLUDE_DEVICES,
     CONF_INCLUDE_DOMAINS,
     CONF_INCLUDE_ENTITIES,
@@ -54,6 +55,7 @@ from .rest_api import (
     InvalidAuth,
     UnsupportedVersion,
     async_get_discovery_info,
+    async_get_host_configs,
     async_probe_host,
 )
 
@@ -161,6 +163,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_SECURE: True,
             CONF_MAX_MSG_SIZE: DEFAULT_MAX_MSG_SIZE,
         }
+        self._connection_data: dict = {}
+        self._host_configs: list = []
 
     @staticmethod
     @callback
@@ -225,7 +229,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_connection_details(self, user_input=None):
-        """Handle connection details for remote mode."""
+        """Handle connection details for remote mode (step 1 of 2)."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -245,24 +249,38 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected exception during connection validation")
                 errors["base"] = "unknown"
             else:
-                await self.async_set_unique_id(info["uuid"])
-                self._abort_if_unique_id_configured()
-                title = user_input.pop(CONF_NAME)
-                data = {CONF_ROLE: ROLE_REMOTE, **user_input}
-                return self.async_create_entry(title=title, data=data)
+                try:
+                    host_configs = await async_get_host_configs(
+                        self.hass,
+                        user_input[CONF_HOST],
+                        user_input[CONF_PORT],
+                        user_input.get(CONF_SECURE, False),
+                        user_input[CONF_ACCESS_TOKEN],
+                        user_input.get(CONF_VERIFY_SSL, False),
+                    )
+                except EndpointMissing:
+                    errors["base"] = "missing_endpoint"
+                except InvalidAuth:
+                    errors["base"] = "invalid_auth"
+                except (ApiProblem, Exception):
+                    errors["base"] = "api_problem"
+                else:
+                    await self.async_set_unique_id(info["uuid"])
+                    self._abort_if_unique_id_configured()
+                    self._connection_data = dict(user_input)
+                    self._host_configs = host_configs
+                    return await self.async_step_select_host_config()
 
         host = self.prefill.get(CONF_HOST, vol.UNDEFINED)
         port = self.prefill.get(CONF_PORT, vol.UNDEFINED)
         secure = self.prefill.get(CONF_SECURE, vol.UNDEFINED)
         max_msg_size = self.prefill.get(CONF_MAX_MSG_SIZE, vol.UNDEFINED)
-        default_name = f"{self.hass.config.location_name} (Remote)"
 
         user_input = user_input or {}
         return self.async_show_form(
             step_id="connection_details",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_NAME, default=user_input.get(CONF_NAME, default_name)): str,
                     vol.Required(CONF_HOST, default=user_input.get(CONF_HOST, host)): str,
                     vol.Required(CONF_PORT, default=user_input.get(CONF_PORT, port)): int,
                     vol.Required(
@@ -280,6 +298,55 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 }
             ),
             errors=errors,
+        )
+
+    async def async_step_select_host_config(self, user_input=None):
+        """Let the user pick which host config entry to link to (step 2 of 2)."""
+        if not self._host_configs:
+            return self.async_abort(reason="no_host_configs")
+
+        if user_input is not None:
+            name = user_input.pop(CONF_NAME)
+            host_entry_id = user_input.pop(CONF_HOST_ENTRY_ID)
+            data = {
+                CONF_ROLE: ROLE_REMOTE,
+                CONF_HOST_ENTRY_ID: host_entry_id,
+                **self._connection_data,
+            }
+            return self.async_create_entry(title=name, data=data)
+
+        # Build selector options with descriptive labels
+        options = []
+        for cfg in self._host_configs:
+            label = (
+                f"{cfg['title']} — "
+                f"{len(cfg['include_domains'])} domains, "
+                f"{cfg['include_devices_count']} devices, "
+                f"{cfg['include_entities_count']} entities included"
+            )
+            options.append({"value": cfg["entry_id"], "label": label})
+
+        default_entry_id = self._host_configs[0]["entry_id"] if len(self._host_configs) == 1 else vol.UNDEFINED
+        default_name = f"{self.hass.config.location_name} (Remote)"
+        host = self._connection_data.get(CONF_HOST, "")
+
+        return self.async_show_form(
+            step_id="select_host_config",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_NAME, default=default_name): str,
+                    vol.Required(CONF_HOST_ENTRY_ID, default=default_entry_id): SelectSelector(
+                        SelectSelectorConfig(
+                            options=options,
+                            mode=SelectSelectorMode.LIST,
+                        )
+                    ),
+                }
+            ),
+            description_placeholders={
+                "host": host,
+                "count": str(len(self._host_configs)),
+            },
         )
 
     async def async_step_zeroconf(self, discovery_info):

@@ -80,3 +80,28 @@ async def async_get_discovery_info(hass, host, port, secure, access_token, verif
         if "uuid" not in json:
             raise UnsupportedVersion()
         return json
+
+
+HOST_CONFIGS_URL = "{proto}://{host}:{port}/api/ha_bridge/host_configs"
+
+
+async def async_get_host_configs(hass, host, port, secure, access_token, verify_ssl):
+    """Fetch list of host config entries from a host instance."""
+    url = HOST_CONFIGS_URL.format(
+        proto="https" if secure else "http",
+        host=host,
+        port=port,
+    )
+    headers = {
+        "Authorization": "Bearer " + access_token,
+        "Content-Type": "application/json",
+    }
+    session = async_get_clientsession(hass, verify_ssl)
+    async with session.get(url, headers=headers) as resp:
+        if resp.status == 401:
+            raise InvalidAuth()
+        if resp.status == 404:
+            raise EndpointMissing()
+        if resp.status != 200:
+            raise ApiProblem()
+        return await resp.json()

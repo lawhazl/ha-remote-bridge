@@ -54,6 +54,7 @@ from .const import (
     CONF_EXCLUDE_DOMAINS,
     CONF_EXCLUDE_ENTITIES,
     CONF_FILTER,
+    CONF_HOST_ENTRY_ID,
     CONF_INCLUDE_DEVICES,
     CONF_INCLUDE_DOMAINS,
     CONF_INCLUDE_ENTITIES,
@@ -73,7 +74,7 @@ from .const import (
 from .logger import log, async_setup_log_rotation
 from .proxy_services import ProxyServices
 from .rest_api import UnsupportedVersion, async_get_discovery_info
-from .views import DiscoveryInfoView, get_integration_version
+from .views import DiscoveryInfoView, HostConfigsView, get_integration_version
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -160,6 +161,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Remote Bridge component."""
     hass.data.setdefault(DOMAIN, {
         "_view_registered": False,
+        "_host_configs_view_registered": False,
         "_ws_registered": False,
         "pending_remotes": {},  # {uuid: {uuid, name, first_seen}} — cleared on HA restart
     })
@@ -181,6 +183,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hass.http.register_view(DiscoveryInfoView())
             hass.data[DOMAIN]["_view_registered"] = True
             log(hass, "HOST", "STARTUP", f"Discovery endpoint registered: /api/ha_bridge/discovery")
+
+        if not hass.data[DOMAIN].get("_host_configs_view_registered"):
+            hass.http.register_view(HostConfigsView())
+            hass.data[DOMAIN]["_host_configs_view_registered"] = True
+            log(hass, "HOST", "STARTUP", "Host configs endpoint registered: /api/ha_bridge/host_configs")
 
         if not hass.data[DOMAIN].get("_ws_registered"):
             websocket_api.async_register_command(hass, ws_get_exposed_entities)
