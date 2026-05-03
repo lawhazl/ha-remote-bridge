@@ -902,6 +902,32 @@ class RemoteConnection:
             # must write state to this actual ID — not the suggested one — so the
             # registry entry and the state machine stay in sync (no duplicate entities).
             actual_entity_id = reg_entry.entity_id
+
+            # Self-heal stale _2/_3 suffixes: if the registry assigned a suffixed
+            # entity_id in a previous session but the clean entity_id is now free,
+            # rename the entry back to the clean name. This runs on every snapshot
+            # sync and is idempotent — once renamed, the clean entry is found by
+            # unique_id on subsequent calls and no rename is needed.
+            if actual_entity_id != prefixed_entity_id:
+                if (
+                    entity_registry.async_get(prefixed_entity_id) is None
+                    and self._hass.states.async_get(prefixed_entity_id) is None
+                ):
+                    try:
+                        entity_registry.async_update_entity(
+                            actual_entity_id, new_entity_id=prefixed_entity_id
+                        )
+                        _LOGGER.info(
+                            "[REMOTE] Renamed %s → %s (clean entity_id is now free)",
+                            actual_entity_id, prefixed_entity_id,
+                        )
+                        actual_entity_id = prefixed_entity_id
+                    except Exception as err:
+                        _LOGGER.debug(
+                            "Could not rename %s → %s: %s",
+                            actual_entity_id, prefixed_entity_id, err,
+                        )
+
             self._host_to_local_entity_id[host_entity_id] = actual_entity_id
 
             if DATA_CUSTOMIZE in self._hass.data:
