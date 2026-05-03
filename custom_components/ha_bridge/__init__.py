@@ -911,7 +911,7 @@ class RemoteConnection:
             if actual_entity_id != prefixed_entity_id:
                 if (
                     entity_registry.async_get(prefixed_entity_id) is None
-                    and self._hass.states.async_get(prefixed_entity_id) is None
+                    and self._hass.states.get(prefixed_entity_id) is None
                 ):
                     try:
                         entity_registry.async_update_entity(
